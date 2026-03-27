@@ -1,0 +1,33 @@
+#!/bin/bash
+# .forge/hooks/session-start.sh — SessionStart hook
+# Verifies bead system is available and shows active bead status
+
+# Check that jq is available
+if ! command -v jq &>/dev/null; then
+	echo "[forge] Warning: jq is not installed. Bead state management requires jq."
+	echo "[forge] Install with: brew install jq (macOS) or apt install jq (Linux)"
+	exit 0
+fi
+
+# Check that forge.yaml exists
+if [ ! -f "forge.yaml" ]; then
+	exit 0
+fi
+
+# Check beads directory exists
+if [ ! -d ".forge/beads/active" ]; then
+	mkdir -p .forge/beads/active .forge/beads/archive
+fi
+
+# Show active beads
+ACTIVE=$(bash .forge/pipeline/bead-state.sh list-active 2>/dev/null)
+if [ -n "$ACTIVE" ] && [ "$ACTIVE" != "[]" ]; then
+	COUNT=$(echo "$ACTIVE" | jq 'length' 2>/dev/null)
+	echo "[forge] ${COUNT} active bead(s):"
+	echo "$ACTIVE" | jq -r '.[] | "  \(.id) [\(.status)] \(.title) (T\(.riskTier // "?"))"' 2>/dev/null
+	echo "[forge] Resume with: /deliver --resume <bead-id>"
+else
+	echo "[forge] No active beads. Start work with: /deliver \"description\""
+fi
+
+exit 0

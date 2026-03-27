@@ -1,0 +1,55 @@
+{
+	"permissions": {
+		"allow": [
+			"Read",
+			"Edit",
+			"Write",
+			"Glob",
+			"Grep",
+			"WebFetch",
+			"Bash(npm run *)",
+			"Bash(npx *)",
+			"Bash(git *)",
+			"Bash(gh *)",
+			"Bash(bash .forge/*)",
+			"Bash(ls *)",
+			"Bash(mkdir *)",
+			"Bash(cat *)",
+			"Bash(head *)",
+			"Bash(tail *)",
+			"Bash(wc *)",
+			"Bash(find *)",
+			"Bash(which *)",
+			"Bash(echo *)",
+			"Bash(sort *)",
+			"Bash(diff *)",
+			"Bash(cp *)",
+			"Bash(mv *)",
+			"Bash(touch *)",
+			"Bash(chmod *)",
+			"Bash(jq *)"
+		]
+	},
+	"hooks": {
+		"SessionStart": [
+			{
+				"command": "bash .forge/hooks/session-start.sh",
+				"timeout": 10000
+			}
+		],
+		"PreToolUse": [
+			{
+				"matcher": "Edit|Write",
+				"command": "bash .forge/hooks/pre-edit.sh",
+				"timeout": 5000
+			}
+		],
+		"PostToolUse": [
+			{
+				"matcher": "Edit|Write",
+				"command": "bash .forge/hooks/post-edit.sh",
+				"timeout": 5000
+			}
+		]
+	}
+}

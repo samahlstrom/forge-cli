@@ -1,0 +1,77 @@
+# Stack Context: Next.js + React + TypeScript
+
+## Tech Stack
+
+- **Framework**: Next.js 14+ (App Router)
+- **Language**: TypeScript (strict mode)
+- **UI**: React 19
+- **Styling**: Tailwind CSS
+- **Testing**: Vitest or Jest
+- **Linting**: ESLint (next/core-web-vitals)
+
+## Project Structure
+
+```
+app/
+  layout.tsx              # Root layout
+  page.tsx                # Home page
+  (routes)/               # Route groups
+    dashboard/
+      page.tsx            # Dashboard page
+      loading.tsx         # Loading UI
+      error.tsx           # Error boundary
+  api/                    # API routes (Route Handlers)
+    endpoint/
+      route.ts
+src/
+  components/             # Reusable UI components
+  lib/                    # Utilities and shared code
+  hooks/                  # Custom React hooks
+  types/                  # TypeScript types
+  services/               # Business logic / data access
+```
+
+## Key Patterns
+
+### Server vs Client Components
+- **Default is Server Component** — no "use client" directive
+- Add `"use client"` only when you need: useState, useEffect, event handlers, browser APIs
+- Keep client components as small as possible — push state to leaves
+- Never pass functions as props from server to client components
+
+### Data Fetching
+- Fetch data in Server Components using `async/await`
+- Use `fetch()` with Next.js caching: `fetch(url, { next: { revalidate: 60 } })`
+- For mutations, use Server Actions (`"use server"`)
+- Never fetch in client components if a Server Component can do it
+
+### API Routes (Route Handlers)
+- File: `app/api/<path>/route.ts`
+- Export named functions: `GET`, `POST`, `PUT`, `DELETE`
+- Always validate input with Zod or similar
+- Return `NextResponse.json()` with proper status codes
+
+### Server Actions
+- Define with `"use server"` directive
+- Use for form submissions and mutations
+- Always validate input — they're public endpoints
+- Return typed results, not just void
+
+### Metadata
+- Export `metadata` object or `generateMetadata` function
+- Include title, description, OpenGraph for all pages
+
+## Anti-Patterns
+
+- Never use `any` type
+- Never use `getServerSideProps` / `getStaticProps` (Pages Router patterns)
+- Never mutate state directly — use `setState` or Server Actions
+- Never use `dangerouslySetInnerHTML` without sanitization
+- Never hardcode secrets — use `process.env`
+- Never import server-only code in client components
+
+## Quality Gates
+
+- `npx tsc --noEmit` — TypeScript checking
+- `npx next lint` — Next.js ESLint rules
+- `npx vitest run` — Unit tests
