@@ -30,25 +30,26 @@ The pipeline ALWAYS runs: intake → classify → decompose → review-plan → 
 
 ### PAUSE
 The orchestrator needs LLM work (decompose, review-plan, execute, or evaluate).
-- Read the file at `prompt_file` — these are your instructions for this stage
-- Read each context file listed in `context[]`
-- Execute the work described in the prompt file **exactly as specified**
-- Write your output to `output_file` in the format the prompt file specifies
-- Run the `resume` command to hand control back to the orchestrator
 
-**For decompose pauses**: You are acting as the architect agent. Read `.forge/agents/architect.md` for instructions. Break the task into subtasks with waves, dependencies, and file assignments. Output JSON to the output file.
+**CRITICAL: ALL pause work MUST be dispatched to a subagent.** Never do pause work in the main context — it pollutes the conversation with noise. Your job is to:
+1. Launch a subagent (via the Agent tool) with the prompt file, context files, and output file path
+2. Wait for the subagent to complete
+3. Run the `resume` command to hand control back to the orchestrator
 
-**For review-plan pauses**: You are acting as the plan reviewer. Read `.forge/pipeline/review-plan.md` for instructions. Evaluate the decomposition and output your verdict.
+**For decompose pauses**: Launch a subagent to act as the architect agent. The subagent reads `prompt_file`, `.forge/agents/architect.md`, and any `context[]` files. It writes the decomposition JSON to `output_file`.
 
-**For execute pauses**: You are the execution dispatcher. Launch subagents for each subtask per wave, verify between waves. Follow `.forge/pipeline/execute.md` exactly.
+**For review-plan pauses**: Launch a subagent to act as the plan reviewer. The subagent reads `prompt_file` (`.forge/pipeline/review-plan.md`) and the decomposition file. It writes its verdict JSON to `output_file`.
 
-**For evaluate pauses**: Launch the three evaluator agents (Edgar, Code Quality, Um-Actually) in parallel as subagents. Each reads its own agent file from `.forge/agents/`. Aggregate their results into the evaluation output format. If the verdict is "revise", the resume command will loop back to execution with the revision brief.
+**For execute pauses**: Launch a subagent as the execution dispatcher. It reads `.forge/pipeline/execute.md`, the decomposition, and launches its own sub-subagents for each subtask per wave. It writes execution results to `output_file`.
+
+**For evaluate pauses**: Launch a subagent as the evaluation dispatcher. It reads `.forge/pipeline/evaluate.md` and launches three parallel sub-subagents (Edgar, Code Quality, Um-Actually), each reading its own agent file from `.forge/agents/`. It aggregates scores and writes the evaluation to `output_file`.
 
 ### HUMAN_INPUT
 The pipeline needs a user decision.
-- Present `question` and `options` to the user
-- Get their answer (option index)
+- Present `question` and `options` to the user **verbatim** — no commentary, no recommendations, no editorializing
+- Wait for their answer (option index)
 - Run the `resume` command with their answer
+- Do NOT add opinions like "I'd recommend..." or "this seems fine" — you are not a decision maker
 
 ### DONE
 Pipeline complete.
