@@ -1,0 +1,66 @@
+name: Auto Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Skip version-bump commits to avoid loops
+    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Build and test
+        run: |
+          go build ./...
+          go vet ./...
+          go test ./...
+
+      - name: Compute next version
+        id: version
+        run: |
+          # Get the latest tag, default to v0.2.0 if none
+          LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.2.0")
+          echo "Latest tag: $LATEST"
+
+          # Parse major.minor.patch
+          VERSION="${LATEST#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+          # Increment: patch goes 0-99, then minor bumps
+          PATCH=$((PATCH + 1))
+          if [ "$PATCH" -ge 100 ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          fi
+
+          NEXT="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "Next version: $NEXT"
+          echo "tag=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
