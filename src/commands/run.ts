@@ -342,8 +342,17 @@ async function executeTaskInWorktree(
 	};
 
 	try {
+		// Clean up any stale worktree/branch from a previous failed run
+		try {
+			await execaCommand(`git worktree remove ${worktreePath} --force`, { shell: true, cwd, timeout: 10000 });
+		} catch { /* doesn't exist, fine */ }
+		try {
+			await execaCommand(`git branch -D ${branchName}`, { shell: true, cwd, timeout: 5000 });
+		} catch { /* doesn't exist, fine */ }
+		await execaCommand(`git worktree prune`, { shell: true, cwd, timeout: 5000 });
+
 		// Create worktree
-		await execaCommand(`git worktree add -b "${branchName}" "${worktreePath}" HEAD`, {
+		await execaCommand(`git worktree add -b ${branchName} ${worktreePath} HEAD`, {
 			shell: true, cwd, timeout: 30000,
 		});
 
@@ -399,7 +408,7 @@ async function executeTaskInWorktree(
 			try {
 				const mainBranch = await getMainBranch(cwd);
 				await execaCommand(`git checkout ${mainBranch}`, { shell: true, cwd, timeout: 10000 });
-				await execaCommand(`git merge "${branchName}" --no-edit`, { shell: true, cwd, timeout: 30000 });
+				await execaCommand(`git merge ${branchName} --no-edit`, { shell: true, cwd, timeout: 30000 });
 				report.status = 'success';
 			} catch (mergeErr) {
 				// Merge conflict — abort and preserve branch for manual resolution
@@ -419,7 +428,7 @@ async function executeTaskInWorktree(
 	} finally {
 		// Clean up worktree (but keep the branch if merge failed)
 		try {
-			await execaCommand(`git worktree remove "${worktreePath}" --force`, {
+			await execaCommand(`git worktree remove ${worktreePath} --force`, {
 				shell: true, cwd, timeout: 15000,
 			});
 		} catch { /* ignore */ }
@@ -427,7 +436,7 @@ async function executeTaskInWorktree(
 		// Delete branch only on success
 		if (report.status === 'success') {
 			try {
-				await execaCommand(`git branch -D "${branchName}"`, {
+				await execaCommand(`git branch -D ${branchName}`, {
 					shell: true, cwd, timeout: 10000,
 				});
 			} catch { /* ignore */ }
