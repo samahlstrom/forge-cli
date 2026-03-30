@@ -564,7 +564,9 @@ async function generateHarness(
 				throw new Error('bd not available');
 			}
 		}
-		await execaCommand('bd init --quiet', { cwd, shell: true, timeout: 15000 });
+		// Initialize with server mode and start the dolt server
+		await execaCommand('bd init --server --quiet', { cwd, shell: true, timeout: 30000 });
+		await execaCommand('bd dolt start', { cwd, shell: true, timeout: 15000 });
 		await execaCommand('bd setup claude', { cwd, shell: true, timeout: 15000 });
 	} catch {
 		// bd install or init failed — not critical
