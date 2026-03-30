@@ -10,11 +10,29 @@ import { resolveTemplatePath } from '../utils/fs.js';
 import { analyzeSpecForInit } from './ingest.js';
 import { copyFile } from 'node:fs/promises';
 
-interface InitOptions {
+export interface InitOptions {
 	preset?: string;
 	force?: boolean;
 	yes?: boolean;
 	spec?: string;
+	/** Pre-computed spec analysis from forge ingest — skips re-analysis */
+	specAnalysis?: SpecAnalysis | null;
+	/** Pre-existing spec ID from forge ingest */
+	specId?: string;
+}
+
+interface SpecAnalysis {
+	project_name: string;
+	description: string;
+	language: string;
+	framework: string | null;
+	project_type: string;
+	modules: string[];
+	architecture: string;
+	sensitive_areas: string;
+	domain_rules: string;
+	constraints: string[];
+	page_count: number | null;
 }
 
 const AVAILABLE_PRESETS = ['sveltekit-ts', 'react-next-ts', 'python-fastapi', 'go'] as const;
@@ -84,11 +102,11 @@ export async function init(options: InitOptions): Promise<void> {
 
 	displayDetected(detected, cwd);
 
-	// Phase 2: Spec analysis (if --spec provided)
-	let specAnalysis: Awaited<ReturnType<typeof analyzeSpecForInit>> = null;
-	let specId: string | null = null;
+	// Phase 2: Spec analysis
+	let specAnalysis: SpecAnalysis | null = options.specAnalysis ?? null;
+	let specId: string | null = options.specId ?? null;
 
-	if (options.spec) {
+	if (options.spec && !specAnalysis) {
 		const specPath = resolve(options.spec);
 		if (!(await exists(specPath))) {
 			p.cancel(`Spec file not found: ${specPath}`);
@@ -142,23 +160,25 @@ export async function init(options: InitOptions): Promise<void> {
 			}
 		}
 
-		// Copy spec into .forge/specs/
-		const randomHex = (n: number) => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => b.toString(16).padStart(2, '0')).join('');
-		specId = `spec-${randomHex(4)}`;
-		const specDir = join(cwd, '.forge', 'specs', specId);
-		await ensureDir(specDir);
-		await copyFile(specPath, join(specDir, `source${extname(specPath)}`));
+		// Copy spec into .forge/specs/ (skip if already done by forge ingest)
+		if (!specId) {
+			const randomHex = (n: number) => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => b.toString(16).padStart(2, '0')).join('');
+			specId = `spec-${randomHex(4)}`;
+			const specDir = join(cwd, '.forge', 'specs', specId);
+			await ensureDir(specDir);
+			await copyFile(specPath, join(specDir, `source${extname(specPath)}`));
 
-		if (specAnalysis) {
-			await writeText(join(specDir, 'analysis.json'), JSON.stringify(specAnalysis, null, 2));
+			if (specAnalysis) {
+				await writeText(join(specDir, 'analysis.json'), JSON.stringify(specAnalysis, null, 2));
+			}
+
+			await writeText(join(specDir, 'meta.json'), JSON.stringify({
+				spec_id: specId,
+				source: { file: basename(specPath), format: extname(specPath).replace('.', '') },
+				status: 'pending-analysis',
+				ingested_at: new Date().toISOString(),
+			}, null, 2));
 		}
-
-		await writeText(join(specDir, 'meta.json'), JSON.stringify({
-			spec_id: specId,
-			source: { file: basename(specPath), format: extname(specPath).replace('.', '') },
-			status: 'pending-analysis',
-			ingested_at: new Date().toISOString(),
-		}, null, 2));
 	}
 
 	// Phase 3: Confirm + ask questions (pre-filled from spec if available)

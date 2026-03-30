@@ -4,6 +4,7 @@ import { join, resolve, extname, basename } from 'node:path';
 import { exists, readText, writeText, ensureDir } from '../utils/fs.js';
 import { execaCommand } from 'execa';
 import { copyFile, stat, readFile } from 'node:fs/promises';
+import { init, type InitOptions } from './init.js';
 
 interface IngestOptions {
 	chunkSize?: string;
@@ -146,12 +147,11 @@ export async function ingest(files: string[], options: IngestOptions): Promise<v
 
 	// Check if harness exists
 	const harnessExists = await exists(join(cwd, 'forge.yaml'));
+	let analysis: SpecAnalysis | null = null;
 
 	if (!harnessExists) {
 		const spinner = p.spinner();
 		spinner.start('Analyzing spec with Claude Code...');
-
-		let analysis: SpecAnalysis | null = null;
 		// Use copied files in .forge/specs/ (not originals) so Claude can always access them
 		const analysisTarget = combinedPath ?? join(specDir, sourceFiles[0]);
 		const analysisExt = combinedPath ? '.md' : resolvedFiles[0].ext;
@@ -168,18 +168,19 @@ export async function ingest(files: string[], options: IngestOptions): Promise<v
 
 		if (analysis) {
 			const extractedLines = [
-				`Project:      ${chalk.cyan(analysis.project_name)}`,
-				`Description:  ${chalk.cyan(analysis.description)}`,
-				`Type:         ${chalk.cyan(analysis.project_type)}`,
-				`Language:     ${chalk.cyan(analysis.language)}`,
+				`Project:      ${analysis.project_name}`,
+				`Description:  ${analysis.description}`,
+				`Type:         ${analysis.project_type}`,
+				`Language:     ${analysis.language}`,
 			];
-			if (analysis.framework) extractedLines.push(`Framework:    ${chalk.cyan(analysis.framework)}`);
-			if (analysis.modules.length > 0) extractedLines.push(`Modules:      ${chalk.cyan(analysis.modules.join(', '))}`);
-			extractedLines.push(`Architecture: ${chalk.cyan(analysis.architecture)}`);
-			if (analysis.sensitive_areas) extractedLines.push(`Sensitive:    ${chalk.cyan(analysis.sensitive_areas)}`);
-			if (analysis.constraints.length > 0) extractedLines.push(`Constraints:  ${chalk.cyan(analysis.constraints.slice(0, 3).join('; '))}`);
+			if (analysis.framework) extractedLines.push(`Framework:    ${analysis.framework}`);
+			if (analysis.modules.length > 0) extractedLines.push(`Modules:      ${analysis.modules.join(', ')}`);
+			extractedLines.push(`Architecture: ${analysis.architecture}`);
+			if (analysis.sensitive_areas) extractedLines.push(`Sensitive:    ${analysis.sensitive_areas}`);
+			if (analysis.constraints.length > 0) extractedLines.push(`Constraints:  ${analysis.constraints.slice(0, 3).join('; ')}`);
 
-			p.note(extractedLines.join('\n'), 'Extracted from spec');
+			const wrapped = wrapNoteLines(extractedLines);
+			p.note(wrapped.join('\n'), 'Extracted from spec');
 
 			const confirmed = await p.confirm({ message: 'Does this look right?', initialValue: true });
 			if (p.isCancel(confirmed)) { p.cancel('Cancelled.'); process.exit(0); }
@@ -208,7 +209,22 @@ export async function ingest(files: string[], options: IngestOptions): Promise<v
 		}
 	}
 
-	// Show next steps
+	// If no harness exists yet, automatically run forge init with the spec analysis
+	if (!harnessExists) {
+		const runInit = await p.confirm({
+			message: 'Scaffold the harness now?',
+			initialValue: true,
+		});
+		if (p.isCancel(runInit)) { p.cancel('Cancelled.'); process.exit(0); }
+
+		if (runInit) {
+			p.outro(chalk.green('Spec ingested — starting init...'));
+			await init({ specAnalysis: analysis, specId } as InitOptions);
+			return;
+		}
+	}
+
+	// Show next steps only if user skipped init or harness already exists
 	if (harnessExists) {
 		p.log.step('Next step:');
 		p.log.message(`  Open Claude Code → ${chalk.cyan(`/ingest ${specId}`)}`);
@@ -352,6 +368,53 @@ Extract the following as a JSON object. Output ONLY the JSON, no explanation, no
 }
 
 Infer language and framework from the spec's technology requirements. If not specified, choose the best fit based on the project type. For medical/healthcare projects, note HIPAA requirements in sensitive_areas.${correctionsClause}`;
+}
+
+function wrapLine(label: string, text: string, width: number): string {
+	const indent = ' '.repeat(label.length);
+	const maxText = width - label.length;
+	if (maxText <= 20) return `${label}${text}`;
+	const words = text.split(' ');
+	const lines: string[] = [];
+	let current = '';
+	for (const word of words) {
+		if (current && (current.length + 1 + word.length) > maxText) {
+			lines.push(current);
+			current = word;
+		} else {
+			current = current ? `${current} ${word}` : word;
+		}
+	}
+	if (current) lines.push(current);
+	return lines.map((l, i) => i === 0 ? `${label}${l}` : `${indent}${l}`).join('\n');
+}
+
+function wrapNoteLines(lines: string[], width?: number): string[] {
+	const cols = width ?? process.stdout.columns ?? 80;
+	// Leave room for note box borders (4 chars padding)
+	const maxWidth = cols - 6;
+	return lines.map(line => {
+		const match = line.match(/^(\S+:\s+)/);
+		if (!match) return line;
+		const label = match[1];
+		const rest = line.slice(label.length);
+		// Strip chalk codes for length calculation, but wrap on raw text
+		const stripped = rest.replace(/\x1b\[[0-9;]*m/g, '');
+		if ((label.length + stripped.length) <= maxWidth) return line;
+		// Re-wrap on the plain text, then re-apply chalk.cyan
+		const plainText = stripped;
+		const wrapped = wrapLine(label, plainText, maxWidth);
+		// Re-apply cyan to each line's content portion
+		return wrapped.split('\n').map((wl, i) => {
+			if (i === 0) {
+				const content = wl.slice(label.length);
+				return `${label}${chalk.cyan(content)}`;
+			}
+			const indentLen = label.length;
+			const content = wl.slice(indentLen);
+			return ' '.repeat(indentLen) + chalk.cyan(content);
+		}).join('\n');
+	});
 }
 
 async function detectPageCount(pdfPath: string): Promise<number | null> {
