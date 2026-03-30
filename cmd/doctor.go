@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/sys/unix"
 )
 
 func init() {
@@ -76,14 +75,14 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	for _, f := range pipelineFiles {
 		if strings.HasSuffix(f, ".sh") {
 			path := filepath.Join(cwd, ".forge", "pipeline", f)
-			if err := unix.Access(path, unix.X_OK); err != nil {
+			if !isExecutable(path) {
 				nonExec++
 			}
 		}
 	}
 	for _, f := range []string{"pre-edit.sh", "post-edit.sh", "session-start.sh"} {
 		path := filepath.Join(cwd, ".forge", "hooks", f)
-		if err := unix.Access(path, unix.X_OK); err != nil {
+		if !isExecutable(path) {
 			nonExec++
 		}
 	}
@@ -192,4 +191,12 @@ func iff(cond bool, t, f string) string {
 		return t
 	}
 	return f
+}
+
+func isExecutable(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.Mode()&0o111 != 0
 }
