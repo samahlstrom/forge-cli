@@ -97,7 +97,9 @@ bd_get_field() {
 
 bd_get_label() {
   local task_id="$1" label_prefix="$2"
-  bd show "$task_id" --json 2>/dev/null | jq -r "if type == \"array\" then .[0].labels[]? else .labels[]? end // empty" | grep "^${label_prefix}:" | head -1 | sed "s/^${label_prefix}://"
+  local labels
+  labels=$(bd show "$task_id" --json 2>/dev/null | jq -r "if type == \"array\" then .[0].labels[]? else .labels[]? end // empty") || true
+  echo "$labels" | grep "^${label_prefix}:" | head -1 | sed "s/^${label_prefix}://" || true
 }
 
 # --- Stage Functions ---
