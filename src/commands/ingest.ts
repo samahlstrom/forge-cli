@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import { join, resolve, extname, basename } from 'node:path';
 import { exists, readText, writeText, ensureDir } from '../utils/fs.js';
 import { execaCommand } from 'execa';
-import { copyFile, stat } from 'node:fs/promises';
+import { copyFile, stat, readFile } from 'node:fs/promises';
 
 interface IngestOptions {
 	chunkSize?: string;
@@ -24,68 +24,116 @@ interface SpecAnalysis {
 	page_count: number | null;
 }
 
-export async function ingest(file: string, options: IngestOptions): Promise<void> {
+export async function ingest(files: string[], options: IngestOptions): Promise<void> {
 	const cwd = process.cwd();
 
 	p.intro(chalk.bold('forge') + chalk.dim(' — Spec Ingestion'));
 
-	// Resolve and validate spec file
-	const specPath = resolve(file);
-	if (!(await exists(specPath))) {
-		p.cancel(`File not found: ${specPath}`);
-		process.exit(1);
+	// Resolve and validate all spec files
+	const resolvedFiles: { path: string; ext: string; name: string; sizeMB: string; pageCount: number | null }[] = [];
+
+	for (const file of files) {
+		const specPath = resolve(file);
+		if (!(await exists(specPath))) {
+			p.cancel(`File not found: ${specPath}`);
+			process.exit(1);
+		}
+
+		const ext = extname(specPath).toLowerCase();
+		const supportedFormats = ['.pdf', '.md', '.txt', '.markdown'];
+		if (!supportedFormats.includes(ext)) {
+			p.cancel(`Unsupported format: ${ext} (${basename(specPath)}). Supported: ${supportedFormats.join(', ')}`);
+			process.exit(1);
+		}
+
+		const fileStats = await stat(specPath);
+		const sizeMB = (fileStats.size / (1024 * 1024)).toFixed(1);
+
+		let pageCount: number | null = null;
+		if (ext === '.pdf') {
+			pageCount = await detectPageCount(specPath);
+		}
+
+		resolvedFiles.push({ path: specPath, ext, name: basename(specPath), sizeMB, pageCount });
 	}
 
-	const ext = extname(specPath).toLowerCase();
-	const supportedFormats = ['.pdf', '.md', '.txt', '.markdown'];
-	if (!supportedFormats.includes(ext)) {
-		p.cancel(`Unsupported format: ${ext}. Supported: ${supportedFormats.join(', ')}`);
-		process.exit(1);
-	}
+	const isMulti = resolvedFiles.length > 1;
 
-	// Get file info
-	const fileStats = await stat(specPath);
-	const fileSizeMB = (fileStats.size / (1024 * 1024)).toFixed(1);
-	const format = ext === '.pdf' ? 'PDF' : ext === '.md' || ext === '.markdown' ? 'Markdown' : 'Text';
-
-	// Detect page count for PDFs
-	let pageCount: number | null = null;
-	if (ext === '.pdf') {
-		pageCount = await detectPageCount(specPath);
+	// Display source info
+	const infoLines: string[] = [];
+	if (isMulti) {
+		infoLines.push(`Documents: ${chalk.cyan(String(resolvedFiles.length))}`);
+		for (const f of resolvedFiles) {
+			const format = f.ext === '.pdf' ? 'PDF' : f.ext === '.md' || f.ext === '.markdown' ? 'MD' : 'TXT';
+			const pageInfo = f.pageCount ? ` (${f.pageCount}p)` : '';
+			infoLines.push(`  ${chalk.dim('•')} ${chalk.cyan(f.name)} ${chalk.dim(`${format}, ${f.sizeMB} MB${pageInfo}`)}`);
+		}
+	} else {
+		const f = resolvedFiles[0];
+		const format = f.ext === '.pdf' ? 'PDF' : f.ext === '.md' || f.ext === '.markdown' ? 'Markdown' : 'Text';
+		infoLines.push(`File:     ${chalk.cyan(f.name)}`);
+		infoLines.push(`Format:   ${chalk.cyan(format)}`);
+		infoLines.push(`Size:     ${chalk.cyan(f.sizeMB + ' MB')}`);
+		if (f.pageCount) infoLines.push(`Pages:    ${chalk.cyan(String(f.pageCount))}`);
 	}
 
 	const chunkSize = parseInt(options.chunkSize ?? '20', 10);
-	const chunkCount = pageCount ? Math.ceil(pageCount / chunkSize) : null;
+	const totalPages = resolvedFiles.reduce((sum, f) => sum + (f.pageCount ?? 0), 0);
+	if (totalPages > chunkSize) {
+		infoLines.push(`Chunks:   ${chalk.cyan(`${Math.ceil(totalPages / chunkSize)} × ${chunkSize} pages`)}`);
+	}
 
-	const infoLines = [
-		`File:     ${chalk.cyan(basename(specPath))}`,
-		`Format:   ${chalk.cyan(format)}`,
-		`Size:     ${chalk.cyan(fileSizeMB + ' MB')}`,
-	];
-	if (pageCount) infoLines.push(`Pages:    ${chalk.cyan(String(pageCount))}`);
-	if (chunkCount && chunkCount > 1) infoLines.push(`Chunks:   ${chalk.cyan(`${chunkCount} × ${chunkSize} pages`)}`);
-
-	p.note(infoLines.join('\n'), 'Source Document');
+	p.note(infoLines.join('\n'), isMulti ? 'Source Documents' : 'Source Document');
 
 	// Generate spec ID
 	const specId = `spec-${randomHex(4)}`;
 
-	// Create spec directory and copy file
+	// Create spec directory and copy all files
 	const specDir = join(cwd, '.forge', 'specs', specId);
 	await ensureDir(specDir);
-	const destFile = join(specDir, `source${ext}`);
-	await copyFile(specPath, destFile);
 
-	p.log.success(`Copied to ${chalk.dim(`.forge/specs/${specId}/source${ext}`)}`);
+	const sourceFiles: string[] = [];
+	for (let i = 0; i < resolvedFiles.length; i++) {
+		const f = resolvedFiles[i];
+		// Prefix with index to preserve order for multi-file
+		const destName = isMulti ? `source-${i + 1}${f.ext}` : `source${f.ext}`;
+		await copyFile(f.path, join(specDir, destName));
+		sourceFiles.push(destName);
+	}
+
+	// If multiple text/markdown files, create a concatenated version for analysis
+	let combinedPath: string | null = null;
+	if (isMulti) {
+		const parts: string[] = [];
+		for (const f of resolvedFiles) {
+			if (f.ext === '.pdf') {
+				parts.push(`\n\n---\n# [PDF Document: ${f.name}]\n# (Read separately via PDF reader)\n---\n\n`);
+			} else {
+				const content = await readFile(f.path, 'utf-8');
+				parts.push(`\n\n---\n# Document: ${f.name}\n---\n\n${content}`);
+			}
+		}
+		combinedPath = join(specDir, 'combined.md');
+		await writeText(combinedPath, parts.join(''));
+	}
+
+	p.log.success(`Copied ${resolvedFiles.length} file${isMulti ? 's' : ''} to ${chalk.dim(`.forge/specs/${specId}/`)}`);
+	if (combinedPath) {
+		p.log.success(`Combined document created at ${chalk.dim(`.forge/specs/${specId}/combined.md`)}`);
+	}
 
 	// Write spec metadata
 	const meta = {
 		spec_id: specId,
 		source: {
-			file: basename(specPath),
-			format: ext.replace('.', ''),
-			size_mb: parseFloat(fileSizeMB),
-			pages: pageCount,
+			files: resolvedFiles.map((f, i) => ({
+				original: f.name,
+				stored: sourceFiles[i],
+				format: f.ext.replace('.', ''),
+				size_mb: parseFloat(f.sizeMB),
+				pages: f.pageCount,
+			})),
+			combined: combinedPath ? 'combined.md' : null,
 			ingested_at: new Date().toISOString(),
 		},
 		status: 'pending-analysis',
@@ -93,17 +141,20 @@ export async function ingest(file: string, options: IngestOptions): Promise<void
 	};
 	await writeText(join(specDir, 'meta.json'), JSON.stringify(meta, null, 2));
 
-	// Check if harness exists — if not, this is a --spec init
+	// Check if harness exists
 	const harnessExists = await exists(join(cwd, 'forge.yaml'));
 
 	if (!harnessExists) {
-		// This was called via `forge init --spec` — analyze spec to extract project metadata
 		const spinner = p.spinner();
 		spinner.start('Analyzing spec with Claude Code...');
 
 		let analysis: SpecAnalysis | null = null;
+		const analysisTarget = combinedPath ?? resolvedFiles[0].path;
+		const analysisExt = combinedPath ? '.md' : resolvedFiles[0].ext;
+		const analysisPagesCount = combinedPath ? null : resolvedFiles[0].pageCount;
+
 		try {
-			analysis = await analyzeSpecWithClaude(specPath, ext, pageCount);
+			analysis = await analyzeSpecWithClaude(analysisTarget, analysisExt, analysisPagesCount);
 			spinner.stop('Spec analysis complete');
 		} catch (err) {
 			spinner.stop('Spec analysis failed');
@@ -112,50 +163,35 @@ export async function ingest(file: string, options: IngestOptions): Promise<void
 		}
 
 		if (analysis) {
-			// Show extracted metadata for confirmation
 			const extractedLines = [
 				`Project:      ${chalk.cyan(analysis.project_name)}`,
 				`Description:  ${chalk.cyan(analysis.description)}`,
 				`Type:         ${chalk.cyan(analysis.project_type)}`,
 				`Language:     ${chalk.cyan(analysis.language)}`,
 			];
-			if (analysis.framework) {
-				extractedLines.push(`Framework:    ${chalk.cyan(analysis.framework)}`);
-			}
-			if (analysis.modules.length > 0) {
-				extractedLines.push(`Modules:      ${chalk.cyan(analysis.modules.join(', '))}`);
-			}
+			if (analysis.framework) extractedLines.push(`Framework:    ${chalk.cyan(analysis.framework)}`);
+			if (analysis.modules.length > 0) extractedLines.push(`Modules:      ${chalk.cyan(analysis.modules.join(', '))}`);
 			extractedLines.push(`Architecture: ${chalk.cyan(analysis.architecture)}`);
-			if (analysis.sensitive_areas) {
-				extractedLines.push(`Sensitive:    ${chalk.cyan(analysis.sensitive_areas)}`);
-			}
-			if (analysis.constraints.length > 0) {
-				extractedLines.push(`Constraints:  ${chalk.cyan(analysis.constraints.slice(0, 3).join('; '))}`);
-			}
+			if (analysis.sensitive_areas) extractedLines.push(`Sensitive:    ${chalk.cyan(analysis.sensitive_areas)}`);
+			if (analysis.constraints.length > 0) extractedLines.push(`Constraints:  ${chalk.cyan(analysis.constraints.slice(0, 3).join('; '))}`);
 
 			p.note(extractedLines.join('\n'), 'Extracted from spec');
 
-			const confirmed = await p.confirm({
-				message: 'Does this look right?',
-				initialValue: true,
-			});
+			const confirmed = await p.confirm({ message: 'Does this look right?', initialValue: true });
 			if (p.isCancel(confirmed)) { p.cancel('Cancelled.'); process.exit(0); }
 
-			let corrections = '';
 			if (!confirmed) {
 				const correctionsAnswer = await p.text({
 					message: 'What needs to change?',
 					placeholder: 'e.g. Use SvelteKit instead of Next.js, add billing as a module',
 				});
 				if (p.isCancel(correctionsAnswer)) { p.cancel('Cancelled.'); process.exit(0); }
-				corrections = correctionsAnswer as string;
 
-				// Re-analyze with corrections
-				if (corrections) {
+				if (correctionsAnswer) {
 					const spinner2 = p.spinner();
 					spinner2.start('Re-analyzing with corrections...');
 					try {
-						analysis = await analyzeSpecWithClaude(specPath, ext, pageCount, corrections);
+						analysis = await analyzeSpecWithClaude(analysisTarget, analysisExt, analysisPagesCount, correctionsAnswer as string);
 						spinner2.stop('Updated analysis complete');
 					} catch {
 						spinner2.stop('Re-analysis failed, using original analysis');
@@ -163,9 +199,7 @@ export async function ingest(file: string, options: IngestOptions): Promise<void
 				}
 			}
 
-			// Write the analysis to the spec directory for the /ingest skill to use
 			await writeText(join(specDir, 'analysis.json'), JSON.stringify(analysis, null, 2));
-
 			p.log.success('Spec analysis saved.');
 		}
 	}
@@ -205,25 +239,76 @@ async function analyzeSpecWithClaude(
 ): Promise<SpecAnalysis> {
 	const prompt = buildAnalysisPrompt(specPath, ext, pageCount, corrections);
 
-	// Call claude as a subprocess
-	const result = await execaCommand(
-		`claude -p "${escapeShell(prompt)}" --output-format json`,
-		{ timeout: 120000, shell: true },
-	);
+	// Write prompt to a temp file to avoid shell escaping issues
+	const tmpPromptFile = join('/tmp', `forge-prompt-${randomHex(4)}.txt`);
+	await writeText(tmpPromptFile, prompt);
 
-	// Parse the response — claude outputs JSON with a "result" field
-	let responseText = result.stdout;
+	try {
+		// Call claude as a subprocess, piping the prompt via stdin
+		const result = await execaCommand(
+			`cat "${tmpPromptFile}" | claude -p --output-format json`,
+			{ timeout: 180000, shell: true },
+		);
 
-	// Try to extract JSON from the response
-	const jsonMatch = responseText.match(/\{[\s\S]*"project_name"[\s\S]*\}/);
-	if (!jsonMatch) {
-		throw new Error('Could not parse spec analysis from Claude response');
+		const responseText = result.stdout;
+
+		// claude -p --output-format json wraps output as:
+		// {"type":"result","result":"<the actual content>", ...}
+		let content: string;
+		try {
+			const wrapper = JSON.parse(responseText);
+			content = wrapper.result ?? responseText;
+		} catch {
+			// If it's not valid JSON wrapper, use raw output
+			content = responseText;
+		}
+
+		// Extract the JSON object from Claude's response
+		// Try multiple patterns since Claude might wrap it in markdown code blocks
+		let jsonStr: string | null = null;
+
+		// Pattern 1: ```json ... ``` code block
+		const codeBlockMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+		if (codeBlockMatch) {
+			jsonStr = codeBlockMatch[1];
+		}
+
+		// Pattern 2: raw JSON object with project_name
+		if (!jsonStr) {
+			const rawMatch = content.match(/\{[\s\S]*?"project_name"[\s\S]*?\}/);
+			if (rawMatch) {
+				jsonStr = rawMatch[0];
+			}
+		}
+
+		// Pattern 3: the entire content is JSON
+		if (!jsonStr) {
+			try {
+				JSON.parse(content);
+				jsonStr = content;
+			} catch { /* not json */ }
+		}
+
+		if (!jsonStr) {
+			throw new Error(`Could not find JSON in Claude response. Raw output:\n${content.slice(0, 500)}`);
+		}
+
+		const analysis: SpecAnalysis = JSON.parse(jsonStr);
+		analysis.page_count = pageCount;
+
+		// Validate required fields
+		if (!analysis.project_name || !analysis.language) {
+			throw new Error(`Incomplete analysis: missing project_name or language`);
+		}
+
+		return analysis;
+	} finally {
+		// Clean up temp file
+		try {
+			const { unlink } = await import('node:fs/promises');
+			await unlink(tmpPromptFile);
+		} catch { /* ignore */ }
 	}
-
-	const analysis: SpecAnalysis = JSON.parse(jsonMatch[0]);
-	analysis.page_count = pageCount;
-
-	return analysis;
 }
 
 function buildAnalysisPrompt(
@@ -247,7 +332,7 @@ function buildAnalysisPrompt(
 
 	return `${readInstruction}
 
-Extract the following as a JSON object (and ONLY a JSON object, no other text):
+Extract the following as a JSON object. Output ONLY the JSON, no explanation, no markdown formatting:
 
 {
   "project_name": "short project name",
@@ -266,14 +351,12 @@ Infer language and framework from the spec's technology requirements. If not spe
 }
 
 async function detectPageCount(pdfPath: string): Promise<number | null> {
-	// Try macOS mdls first
 	try {
 		const result = await execaCommand(`mdls -name kMDItemNumberOfPages -raw "${pdfPath}"`, { shell: true });
 		const count = parseInt(result.stdout.trim(), 10);
 		if (!isNaN(count) && count > 0) return count;
 	} catch { /* fall through */ }
 
-	// Try pdfinfo (poppler-utils)
 	try {
 		const result = await execaCommand(`pdfinfo "${pdfPath}" 2>/dev/null | grep "^Pages:" | awk '{print $2}'`, { shell: true });
 		const count = parseInt(result.stdout.trim(), 10);
@@ -287,8 +370,4 @@ function randomHex(bytes: number): string {
 	const array = new Uint8Array(bytes);
 	crypto.getRandomValues(array);
 	return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function escapeShell(str: string): string {
-	return str.replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
 }

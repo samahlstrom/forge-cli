@@ -24,8 +24,9 @@ program
 	.action(init);
 
 program
-	.command('ingest <file>')
-	.description('Ingest a spec document for project planning and decomposition')
+	.command('ingest')
+	.description('Ingest one or more spec documents for project planning and decomposition')
+	.argument('<files...>', 'One or more spec files (PDF, markdown, text)')
 	.option('--chunk-size <pages>', 'Pages per chunk for PDF processing', '20')
 	.option('--resume <spec-id>', 'Resume analysis of an existing spec')
 	.action(ingest);
