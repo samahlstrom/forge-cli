@@ -1,46 +1,8 @@
 #!/bin/bash
 # .forge/hooks/post-edit.sh — PostToolUse hook for Edit|Write
-# Tracks edits in bead state and auto-checkpoints at thresholds
+# Lightweight hook — bd handles tracking via its own git hooks
 
-INPUT=$(cat)
-FILE_PATH=$(echo "$INPUT" | jq -r '.file_path // .path // empty' 2>/dev/null)
-
-# Skip if no file path or harness file
-if [ -z "$FILE_PATH" ]; then
-	exit 0
-fi
-case "$FILE_PATH" in
-	.forge/*|.claude/*|forge.yaml|CLAUDE.md) exit 0 ;;
-esac
-
-# Get active bead
-ACTIVE=$(bash .forge/pipeline/bead-state.sh list-active 2>/dev/null)
-if [ -z "$ACTIVE" ] || [ "$ACTIVE" = "[]" ]; then
-	exit 0
-fi
-
-BEAD_ID=$(echo "$ACTIVE" | jq -r '.[0].id' 2>/dev/null)
-if [ -z "$BEAD_ID" ]; then
-	exit 0
-fi
-
-# Record the file modification in the bead
-BEAD_FILE=".forge/beads/active/${BEAD_ID}.json"
-if [ -f "$BEAD_FILE" ]; then
-	# Add file to modified list if not already there
-	ALREADY=$(jq -r --arg f "$FILE_PATH" '.files.modified | index($f) // empty' "$BEAD_FILE" 2>/dev/null)
-	if [ -z "$ALREADY" ]; then
-		jq --arg f "$FILE_PATH" '.files.modified += [$f]' "$BEAD_FILE" > "${BEAD_FILE}.tmp" && mv "${BEAD_FILE}.tmp" "$BEAD_FILE"
-	fi
-
-	# Increment edit count and auto-checkpoint every 20 edits
-	EDIT_COUNT=$(jq -r '.edit_count // 0' "$BEAD_FILE" 2>/dev/null)
-	NEW_COUNT=$((EDIT_COUNT + 1))
-	jq --argjson c "$NEW_COUNT" '.edit_count = $c' "$BEAD_FILE" > "${BEAD_FILE}.tmp" && mv "${BEAD_FILE}.tmp" "$BEAD_FILE"
-
-	if [ $((NEW_COUNT % 20)) -eq 0 ]; then
-		bash .forge/pipeline/bead-state.sh checkpoint "$BEAD_ID" "Auto-checkpoint at $NEW_COUNT edits" 2>/dev/null
-	fi
-fi
+# No-op: bd tracks work through its git integration (bd setup claude)
+# and its own commit hooks. No need to manually update task state here.
 
 exit 0

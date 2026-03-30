@@ -127,8 +127,7 @@ my-project/
     │   ├── decompose.md
     │   ├── execute.md
     │   ├── verify.sh
-    │   ├── deliver.sh
-    │   └── bead-state.sh
+    │   └── deliver.sh
     ├── agents/                         # Specialist agent definitions
     │   ├── architect.md
     │   ├── backend.md                  # (if project needs it)
@@ -139,9 +138,9 @@ my-project/
     │   ├── stack.md                    # Tech stack conventions
     │   └── project.md                  # Your project context
     ├── hooks/                          # Claude Code lifecycle hooks
-    ├── beads/                          # Work unit tracking
     ├── specs/                          # Ingested spec documents
     └── addons/                         # Installed addon files
+.beads/                                 # bd task tracking (Dolt database)
 ```
 
 ## Supported stacks
@@ -160,13 +159,13 @@ Works with any project regardless of stack — presets just provide stack-specif
 forge add browser-testing      # Playwright visual QA
 forge add compliance-hipaa     # HIPAA security checks
 forge add compliance-soc2      # SOC2 compliance verification
-forge add beads-dolt-backend   # Dolt version control for beads
 ```
 
 ## Requirements
 
 - Node.js 18+
 - Git
+- [`bd`](https://github.com/steveyegge/beads) (task tracking — `brew install beads`)
 - `jq` (for JSON processing in pipeline scripts)
 - `gh` CLI (for PR creation)
 - Claude Code (to run the generated harness)

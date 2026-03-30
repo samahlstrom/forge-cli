@@ -173,7 +173,6 @@ function findTemplatePath(relativePath: string, preset: string): string | null {
 		'.forge/pipeline/execute.md': 'core/pipeline/execute.md.hbs',
 		'.forge/pipeline/verify.sh': 'core/pipeline/verify.sh.hbs',
 		'.forge/pipeline/deliver.sh': 'core/pipeline/deliver.sh.hbs',
-		'.forge/pipeline/bead-state.sh': 'core/pipeline/bead-state.sh.hbs',
 		'.forge/agents/architect.md': 'core/agents/architect.md.hbs',
 		'.forge/agents/quality.md': 'core/agents/quality.md.hbs',
 		'.forge/agents/security.md': 'core/agents/security.md.hbs',
@@ -184,7 +183,6 @@ function findTemplatePath(relativePath: string, preset: string): string | null {
 		'.forge/hooks/pre-edit.sh': 'core/hooks/pre-edit.sh.hbs',
 		'.forge/hooks/post-edit.sh': 'core/hooks/post-edit.sh.hbs',
 		'.forge/hooks/session-start.sh': 'core/hooks/session-start.sh.hbs',
-		'.forge/beads/config.yaml': 'core/beads/config.yaml.hbs',
 	};
 
 	return mappings[relativePath] ?? null;

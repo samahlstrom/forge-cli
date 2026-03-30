@@ -1,7 +1,7 @@
 import * as p from '@clack/prompts';
 import chalk from 'chalk';
 import { join } from 'node:path';
-import { exists, listDir } from '../utils/fs.js';
+import { exists } from '../utils/fs.js';
 import { readYaml } from '../utils/yaml.js';
 import { readHashes } from '../utils/hash.js';
 
@@ -21,13 +21,20 @@ export async function status(): Promise<void> {
 	const addons = (config.addons as string[]) ?? [];
 	const hashes = await readHashes(cwd);
 
-	// Count active beads
-	const activeBeads = await listDir(join(cwd, '.forge', 'beads', 'active'));
-	const beadCount = activeBeads.filter((f) => f.endsWith('.json')).length;
-
-	// Count archived beads
-	const archivedBeads = await listDir(join(cwd, '.forge', 'beads', 'archive'));
-	const archiveCount = archivedBeads.filter((f) => f.endsWith('.json')).length;
+	// Get task counts from bd
+	let openCount = 0;
+	let closedCount = 0;
+	let bdAvailable = false;
+	try {
+		const { execSync } = await import('node:child_process');
+		const openResult = execSync('bd list --status open --json 2>/dev/null', { stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
+		openCount = openResult && openResult !== '[]' ? JSON.parse(openResult).length : 0;
+		const closedResult = execSync('bd list --status closed --json 2>/dev/null', { stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
+		closedCount = closedResult && closedResult !== '[]' ? JSON.parse(closedResult).length : 0;
+		bdAvailable = true;
+	} catch {
+		// bd not available
+	}
 
 	const lines = [
 		`Project:     ${chalk.cyan(project?.name ?? 'unknown')}`,
@@ -36,8 +43,9 @@ export async function status(): Promise<void> {
 		`Agents:      ${chalk.cyan(agents.join(', '))}`,
 		`Addons:      ${addons.length > 0 ? chalk.cyan(addons.join(', ')) : chalk.dim('none')}`,
 		``,
-		`Active beads:   ${beadCount > 0 ? chalk.yellow(String(beadCount)) : chalk.green('0')}`,
-		`Archived beads: ${chalk.dim(String(archiveCount))}`,
+		`Tracking:    ${bdAvailable ? chalk.green('bd (beads)') : chalk.yellow('bd not installed')}`,
+		`Open tasks:  ${openCount > 0 ? chalk.yellow(String(openCount)) : chalk.green('0')}`,
+		`Closed:      ${chalk.dim(String(closedCount))}`,
 	];
 
 	p.note(lines.join('\n'), 'Harness Status');

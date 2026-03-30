@@ -51,11 +51,10 @@ pipeline:
   max_waves: 5
   auto_pr: {{auto_pr}}
 
-# Bead state tracking — the unit of tracked work
-beads:
-  backend: json-file
+# Task tracking via bd (steveyegge/beads)
+tracking:
+  backend: bd
   enforce_tracking: true
-  auto_checkpoint: true
 
 # Risk classification
 risk:

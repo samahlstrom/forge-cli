@@ -474,7 +474,6 @@ async function generateHarness(
 		['core/pipeline/execute.md.hbs', '.forge/pipeline/execute.md'],
 		['core/pipeline/verify.sh.hbs', '.forge/pipeline/verify.sh'],
 		['core/pipeline/deliver.sh.hbs', '.forge/pipeline/deliver.sh'],
-		['core/pipeline/bead-state.sh.hbs', '.forge/pipeline/bead-state.sh'],
 		['core/agents/architect.md.hbs', '.forge/agents/architect.md'],
 		['core/agents/quality.md.hbs', '.forge/agents/quality.md'],
 		['core/agents/security.md.hbs', '.forge/agents/security.md'],
@@ -482,7 +481,6 @@ async function generateHarness(
 		['core/hooks/pre-edit.sh.hbs', '.forge/hooks/pre-edit.sh'],
 		['core/hooks/post-edit.sh.hbs', '.forge/hooks/post-edit.sh'],
 		['core/hooks/session-start.sh.hbs', '.forge/hooks/session-start.sh'],
-		['core/beads/config.yaml.hbs', '.forge/beads/config.yaml'],
 	];
 
 	// Add agents based on project type
@@ -522,16 +520,24 @@ async function generateHarness(
 	}
 
 	// Create empty directories
-	await ensureDir(join(cwd, '.forge', 'beads', 'active'));
-	await ensureDir(join(cwd, '.forge', 'beads', 'archive'));
 	await ensureDir(join(cwd, '.forge', 'addons'));
 	await ensureDir(join(cwd, '.forge', 'state'));
+	await ensureDir(join(cwd, '.forge', 'pipeline', 'runs'));
 
 	// Write .gitkeep for state
 	await writeText(join(cwd, '.forge', 'state', '.gitkeep'), '');
 
 	// Write hash manifest
 	await writeHashes(cwd, hashes);
+
+	// Initialize bd (beads) for task tracking
+	try {
+		const { execaCommand } = await import('execa');
+		await execaCommand('bd init --quiet', { cwd, shell: true, timeout: 15000 });
+		await execaCommand('bd setup claude', { cwd, shell: true, timeout: 15000 });
+	} catch {
+		// bd not installed — that's OK, user can install later
+	}
 
 	return files;
 }

@@ -1,11 +1,11 @@
 #!/bin/bash
 # .forge/hooks/session-start.sh — SessionStart hook
-# Verifies bead system is available and shows active bead status
+# Verifies bd (beads) is available and shows active work
 
-# Check that jq is available
-if ! command -v jq &>/dev/null; then
-	echo "[forge] Warning: jq is not installed. Bead state management requires jq."
-	echo "[forge] Install with: brew install jq (macOS) or apt install jq (Linux)"
+# Check that bd is available
+if ! command -v bd &>/dev/null; then
+	echo "[forge] Warning: bd (beads) is not installed. Work tracking requires bd."
+	echo "[forge] Install with: brew install beads"
 	exit 0
 fi
 
@@ -14,20 +14,21 @@ if [ ! -f "forge.yaml" ]; then
 	exit 0
 fi
 
-# Check beads directory exists
-if [ ! -d ".forge/beads/active" ]; then
-	mkdir -p .forge/beads/active .forge/beads/archive
+# Check that beads is initialized
+if [ ! -d ".beads" ]; then
+	echo "[forge] Beads not initialized. Initializing..."
+	bd init --quiet 2>/dev/null
 fi
 
-# Show active beads
-ACTIVE=$(bash .forge/pipeline/bead-state.sh list-active 2>/dev/null)
-if [ -n "$ACTIVE" ] && [ "$ACTIVE" != "[]" ]; then
-	COUNT=$(echo "$ACTIVE" | jq 'length' 2>/dev/null)
-	echo "[forge] ${COUNT} active bead(s):"
-	echo "$ACTIVE" | jq -r '.[] | "  \(.id) [\(.status)] \(.title) (T\(.riskTier // "?"))"' 2>/dev/null
-	echo "[forge] Resume with: /deliver --resume <bead-id>"
+# Show ready tasks
+READY=$(bd ready --json 2>/dev/null)
+if [ -n "$READY" ] && [ "$READY" != "[]" ]; then
+	COUNT=$(echo "$READY" | jq 'length' 2>/dev/null)
+	echo "[forge] ${COUNT} task(s) ready to work on:"
+	echo "$READY" | jq -r '.[] | "  \(.id) [P\(.priority)] \(.title)"' 2>/dev/null
+	echo "[forge] Claim one with: bd update <id> --claim"
 else
-	echo "[forge] No active beads. Start work with: /deliver \"description\""
+	echo "[forge] No tasks ready. Start work with: /deliver \"description\""
 fi
 
 exit 0

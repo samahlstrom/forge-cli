@@ -24,7 +24,7 @@ export interface AddonManifest {
 	post_install?: string[];
 }
 
-const ADDON_NAMES = ['browser-testing', 'compliance-hipaa', 'compliance-soc2', 'beads-dolt-backend'] as const;
+const ADDON_NAMES = ['browser-testing', 'compliance-hipaa', 'compliance-soc2'] as const;
 export type AddonName = (typeof ADDON_NAMES)[number];
 
 export function isValidAddon(name: string): name is AddonName {

@@ -43,7 +43,7 @@ export async function doctor(): Promise<void> {
 	// 3. Pipeline files exist
 	const pipelineFiles = [
 		'orchestrator.sh', 'intake.sh', 'classify.sh', 'decompose.md',
-		'execute.md', 'verify.sh', 'deliver.sh', 'bead-state.sh',
+		'execute.md', 'verify.sh', 'deliver.sh',
 	];
 	let pipelineMissing = 0;
 	for (const file of pipelineFiles) {
@@ -109,12 +109,21 @@ export async function doctor(): Promise<void> {
 		passed: await exists(join(cwd, '.forge', 'context', 'project.md')),
 	});
 
-	// 7. Beads directory
+	// 7. bd (beads) installed and initialized
+	const { execSync } = await import('node:child_process');
+	let bdInstalled = false;
+	let bdInitialized = false;
+	try {
+		execSync('which bd', { stdio: 'pipe' });
+		bdInstalled = true;
+		bdInitialized = await exists(join(cwd, '.beads'));
+	} catch {}
 	checks.push({
-		name: 'Beads directory',
-		passed:
-			(await exists(join(cwd, '.forge', 'beads', 'active'))) &&
-			(await exists(join(cwd, '.forge', 'beads', 'archive'))),
+		name: 'bd (beads) installed',
+		passed: bdInstalled,
+		detail: bdInstalled
+			? (bdInitialized ? 'Installed and initialized' : 'Installed but not initialized. Run: bd init --quiet')
+			: 'Not installed. Install: brew install beads',
 	});
 
 	// 8. Claude Code settings
@@ -136,7 +145,6 @@ export async function doctor(): Promise<void> {
 	}
 
 	// 9. jq available
-	const { execSync } = await import('node:child_process');
 	let jqAvailable = false;
 	try {
 		execSync('which jq', { stdio: 'pipe' });
@@ -145,7 +153,7 @@ export async function doctor(): Promise<void> {
 	checks.push({
 		name: 'jq installed',
 		passed: jqAvailable,
-		detail: jqAvailable ? undefined : 'Required for bead state. Install: brew install jq',
+		detail: jqAvailable ? undefined : 'Required for pipeline scripts. Install: brew install jq',
 	});
 
 	// 10. gh CLI available

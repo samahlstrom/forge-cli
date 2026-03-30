@@ -60,9 +60,11 @@ Available agents for subtask assignment:
 - `{{this}}` — see `.forge/agents/{{this}}.md`
 {{/each}}
 
-## Bead Tracking
+## Task Tracking (bd)
 
-- Every unit of work is a **bead** (stored in `.forge/beads/active/`)
-- Beads track: status, risk tier, files modified, pipeline stage, checkpoints
-- The pre-edit hook blocks file changes without an active bead
+- Work is tracked via `bd` (steveyegge/beads) — a Dolt-backed issue tracker
+- `bd ready` — see tasks with no open blockers
+- `bd update <id> --claim` — atomically claim a task
+- `bd close <id> --reason "..."` — mark work complete
+- The pre-edit hook blocks file changes without an in-progress task
 - Use `/deliver --quick` for lightweight changes with minimal ceremony
