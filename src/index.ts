@@ -6,6 +6,8 @@ import { remove } from './commands/remove.js';
 import { upgrade } from './commands/upgrade.js';
 import { status } from './commands/status.js';
 import { doctor } from './commands/doctor.js';
+import { seed } from './commands/seed.js';
+import { run } from './commands/run.js';
 
 const program = new Command();
 
@@ -56,5 +58,21 @@ program
 	.command('doctor')
 	.description('Diagnose harness health: check files, scripts, deps, and config')
 	.action(doctor);
+
+program
+	.command('seed <spec-id>')
+	.description('Create beads (bd tasks) from an approved spec.yaml decomposition')
+	.option('--force', 'Re-create beads even if they already exist')
+	.action(seed);
+
+program
+	.command('run <spec-id>')
+	.description('Auto-pilot: orchestrate task execution from a seeded spec')
+	.option('--dry-run', 'Show execution plan without running')
+	.option('--phase <number>', 'Only execute tasks in a specific phase')
+	.option('--concurrency <number>', 'Max parallel tasks', '1')
+	.option('--budget <usd>', 'Max USD spend per task via claude -p')
+	.option('--no-review', 'Skip review gates between phases')
+	.action(run);
 
 program.parse();

@@ -201,36 +201,45 @@ After approval, for each skill identified in pass-4:
 
 Use the `/skill-creator` skill's patterns for writing good skill files.
 
-### Step 7: Execution Handoff
+### Step 7: Seed Beads
 
-After skills are generated, present the execution plan:
+After skills are generated, create beads for all tasks in the plan:
+
+1. Run: `forge seed <spec-id>`
+2. This creates bd issues for every phase, epic, and task in spec.yaml
+3. Dependencies are wired so `bd ready` returns only unblocked tasks
+4. Report the counts to the user
+
+### Step 8: Execution Handoff
+
+After beads are seeded, present the execution plan:
 
 ```
 Ready to execute. How would you like to proceed?
 
-  1. Phase-by-phase (recommended) — execute one phase at a time with review gates
-  2. Full auto — execute all phases sequentially
-  3. Manual — I'll run /deliver for individual tasks myself
+  1. Auto-pilot (recommended) — run `forge run <spec-id>` to execute all tasks automatically
+  2. Phase-by-phase — run `forge run <spec-id> --phase 1` one phase at a time
+  3. Manual — I'll run /deliver for individual tasks myself, using `bd ready` to pick the next one
 ```
 
-**Phase-by-phase mode** (recommended):
-- For each phase, iterate through its epics and tasks in dependency order
-- For each task, construct a `/deliver` call with the task's description from spec.yaml
-- After each phase completes, update spec.yaml status and ask user to review before next phase
-- Parallelizable phases: tasks without inter-dependencies can be delivered concurrently via subagents
+**Auto-pilot mode** (recommended):
+- User exits Claude Code and runs `forge run <spec-id>` in the terminal
+- The orchestrator picks ready tasks via `bd ready`, invokes `claude -p` with `/deliver` for each
+- Pauses between phases for review (use `--no-review` to skip)
+- Each task runs in an isolated `claude -p` session to avoid context overflow
 
-**Constructing deliver calls from spec.yaml tasks**:
-```
-/deliver "<task.title> — <task.description>. Target files: <task.files_likely>. Risk: <task.risk_tier>. Spec ref: <task.id>"
-```
+**Manual mode**:
+- User runs `bd ready -l "spec:<spec-id>"` to see available tasks
+- Picks a task and runs `/deliver` with its description
+- Closes the bead with `bd close <id>` when done
 
 ### Resuming
 
 If the session is interrupted, the user can run `/ingest <spec-id>` again. Check `spec.yaml` status:
 - `pending-analysis`: start from pass 1
 - `draft`: show the review gate
-- `approved`: resume skill generation or execution
-- `in-progress`: find the last completed phase and resume from the next one
+- `approved`: resume skill generation, seeding, or execution
+- `in-progress`: run `forge run <spec-id>` to resume — it picks up where it left off via `bd ready`
 
 ## Output Protocol
 
