@@ -547,6 +547,11 @@ async function generateHarness(
 	// Write .gitkeep for state
 	await writeText(join(cwd, '.forge', 'state', '.gitkeep'), '');
 
+	// Ensure .forge/worktrees/ and other transient dirs are gitignored
+	const gitignorePath = join(cwd, '.forge', '.gitignore');
+	const gitignoreContent = `worktrees/\nstate/\npipeline/runs/\nspecs/*/reports/\n`;
+	await writeText(gitignorePath, gitignoreContent);
+
 	// Write hash manifest
 	await writeHashes(cwd, hashes);
 
