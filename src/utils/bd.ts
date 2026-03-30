@@ -40,8 +40,9 @@ export async function bdLink(from: string, to: string, type = 'blocks', cwd?: st
 	await execaCommand(`bd link ${from} ${to} --type ${type}`, { shell: true, cwd, timeout: 10000 });
 }
 
-export async function bdReady(labels?: string[], cwd?: string): Promise<BdIssue[]> {
+export async function bdReady(labels?: string[], cwd?: string, type?: string): Promise<BdIssue[]> {
 	const args = ['bd', 'ready', '--json', '-n', '100'];
+	if (type) args.push('-t', type);
 	if (labels?.length) args.push('-l', labels.join(','));
 	const result = await execaCommand(args.join(' '), { shell: true, cwd, timeout: 10000 });
 	if (!result.stdout.trim()) return [];

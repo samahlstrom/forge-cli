@@ -113,7 +113,7 @@ export async function run(specId: string, options: RunOptions): Promise<void> {
 
 		let readyTasks: BdIssue[];
 		try {
-			readyTasks = await bdReady(labelFilters, cwd);
+			readyTasks = await bdReady(labelFilters, cwd, 'task');
 		} catch {
 			readyTasks = [];
 		}
@@ -130,7 +130,7 @@ export async function run(specId: string, options: RunOptions): Promise<void> {
 
 			// Re-check ready tasks
 			try {
-				readyTasks = await bdReady(labelFilters, cwd);
+				readyTasks = await bdReady(labelFilters, cwd, 'task');
 			} catch {
 				readyTasks = [];
 			}
@@ -656,7 +656,7 @@ async function generateMudaAnalysis(
 // ─── Utilities ────────────────────────────────────────────────────
 
 async function showDryRun(specId: string, cwd: string): Promise<void> {
-	const ready = await bdReady([`spec:${specId}`], cwd);
+	const ready = await bdReady([`spec:${specId}`], cwd, 'task');
 	if (ready.length === 0) {
 		p.log.info('No ready tasks found.');
 		return;
