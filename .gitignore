@@ -1,14 +1,12 @@
-node_modules/
-dist/
-*.tsbuildinfo
-.DS_Store
+# Build output
+bin/forge
+*.exe
 
-# Secrets / environment
-.env
-.env.*
-!.env.example
+# Go
+vendor/
 
 # OS
+.DS_Store
 Thumbs.db
 
 # IDE
@@ -17,5 +15,13 @@ Thumbs.db
 *.swp
 *.swo
 
+# Secrets / environment
+.env
+.env.*
+!.env.example
+
 # Claude Code local state
 .claude/worktrees/
+
+# goreleaser
+dist/
