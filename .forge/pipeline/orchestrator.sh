@@ -199,7 +199,7 @@ stage_decompose() {
     "$output_file" \
     "review-plan" \
     "$task_id" \
-    "{{stackFile}}" "{{projectFile}}"
+    "" ""
   exit 0
 }
 
@@ -215,7 +215,7 @@ stage_review_plan() {
     "$output_file" \
     "execute" \
     "$task_id" \
-    "{{stackFile}}" "{{projectFile}}"
+    "" ""
   exit 0
 }
 
@@ -234,7 +234,7 @@ stage_execute() {
     "$output_file" \
     "verify" \
     "$task_id" \
-    "{{stackFile}}" "{{projectFile}}"
+    "" ""
   exit 0
 }
 
@@ -267,7 +267,7 @@ stage_evaluate() {
     "$output_file" \
     "evaluate-check" \
     "$task_id" \
-    "{{stackFile}}" "{{projectFile}}"
+    "" ""
   exit 0
 }
 
