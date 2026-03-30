@@ -1,0 +1,245 @@
+---
+name: ingest
+description: Parse a spec document into a structured project plan with epics, features, and atomic tasks. Use when a user has a PRD, technical spec, or requirements document and wants to decompose it into executable work before writing code. Triggers on /ingest, or when user mentions ingesting a spec, parsing requirements, or planning from a document.
+---
+
+# ingest
+
+> Decompose a spec document into a structured project plan, generate custom skills, and execute phase-by-phase through the /deliver pipeline.
+
+## Trigger
+
+User runs `/ingest <spec-id>` where spec-id corresponds to a directory in `.forge/specs/`.
+
+## Process
+
+### Step 1: Load the spec
+
+1. Read `.forge/specs/<spec-id>/meta.json` to get source file path, format, page count, and chunk size
+2. If `.forge/specs/<spec-id>/analysis.json` exists, read it — this contains project metadata extracted during `forge init --spec`
+3. Read the source document at `.forge/specs/<spec-id>/source.*`
+   - For PDFs: read in chunks using the `pages` parameter (e.g., pages 1-20, then 21-40)
+   - For text/markdown: read the full file (or chunk by heading if very large)
+
+### Step 2: Multi-pass analysis
+
+Run four analysis passes. Each pass builds on the previous ones. Write outputs to `.forge/specs/<spec-id>/`.
+
+#### Pass 1: Structure Extraction
+
+Read the spec (chunk by chunk for large documents) and extract:
+
+- **Sections**: headings, hierarchy, page ranges
+- **Requirements**: SHALL/MUST/SHOULD statements with IDs
+- **User stories**: As a... I want... So that...
+- **Constraints**: performance, compliance, compatibility, security
+- **Data entities**: models, schemas, relationships
+- **Glossary**: domain-specific terms
+
+Write to: `.forge/specs/<spec-id>/pass-1-structure.json`
+
+For chunked documents: run pass 1 per chunk, then consolidate into a single pass-1-structure.json before proceeding.
+
+#### Pass 2: Domain Mapping
+
+Read pass-1 output. Identify:
+
+- **Domains/modules**: logical groupings (e.g., auth, billing, scheduling)
+- **Cross-references**: which sections feed which domains
+- **Dependency graph**: which domains depend on others
+- **Shared concerns**: cross-cutting things like logging, auth, multi-tenancy
+
+Write to: `.forge/specs/<spec-id>/pass-2-domains.json`
+
+#### Pass 3: Epic/Feature/Task Breakdown
+
+Read pass-1 + pass-2 outputs. Decompose into:
+
+- **Epics**: one per domain or major capability
+- **Features**: logical groupings within an epic (max 5 per epic)
+- **Tasks**: atomic units of work, each completable in a single `/deliver` call (max 8 per feature)
+
+Each task gets:
+- `id`: unique identifier (e.g., task-1-1-1)
+- `title`: what to do
+- `description`: detailed description with acceptance criteria
+- `risk_tier`: T1 (low), T2 (moderate), T3 (critical) — using the same classification as the pipeline
+- `dependencies`: list of task IDs that must complete first
+- `files_likely`: predicted files to create or modify
+- `agent`: which agent handles this (architect, backend, frontend, quality, security)
+
+Write to: `.forge/specs/<spec-id>/pass-3-breakdown.json`
+
+#### Pass 4: Skill Identification
+
+Read pass-3 output. Look for:
+
+- **Repeated patterns**: if "create CRUD for entity X" appears 4+ times, that's a skill
+- **Domain workflows**: complex multi-step processes that appear more than once
+- **Boilerplate patterns**: things like "add API endpoint with validation + tests + docs"
+
+For each identified skill:
+- `name`: kebab-case identifier
+- `description`: what it does and when to trigger
+- `pattern`: the repeated work it captures
+- `estimated_savings`: how many tasks it simplifies
+
+Write to: `.forge/specs/<spec-id>/pass-4-skills.json`
+
+### Step 3: Synthesize
+
+Combine all pass outputs into a single `spec.yaml`:
+
+```yaml
+version: 1
+spec_id: "<id>"
+status: "draft"
+summary: "<1-2 sentence project summary>"
+
+domains:
+  - id: "dom-<name>"
+    name: "<Domain Name>"
+    dependencies: ["dom-<other>"]
+
+epics:
+  - id: "epic-<N>"
+    domain: "dom-<name>"
+    title: "<Epic title>"
+    features:
+      - id: "feat-<N>-<M>"
+        title: "<Feature title>"
+        tasks:
+          - id: "task-<N>-<M>-<K>"
+            title: "<Task title>"
+            description: "<Detailed description>"
+            risk_tier: "T1|T2|T3"
+            dependencies: []
+            files_likely: []
+            agent: "backend|frontend|quality|security"
+
+execution_plan:
+  phases:
+    - id: "phase-<N>"
+      name: "<Phase name>"
+      epics: ["epic-<N>"]
+      rationale: "<Why this phase comes here>"
+      parallelizable: true|false
+
+  total_tasks: <count>
+  critical_path: ["task-...", "task-..."]
+
+generated_skills: ["skill-name-1", "skill-name-2"]
+
+constraints:
+  - "<Hard constraint from the spec>"
+```
+
+Write to: `.forge/specs/<spec-id>/spec.yaml`
+
+### Step 4: Review Gate
+
+Present the plan to the user. Show:
+
+```
+Spec Analysis Complete
+═══════════════════════
+
+  Domains:       6
+  Epics:         8
+  Features:      31
+  Tasks:         52
+  Phases:        4
+  Custom skills: 4
+  Risk profile:  23 T3, 18 T2, 11 T1
+
+  Phase 1 — Foundation
+    <epics and task count>
+
+  Phase 2 — Core Features
+    <epics and task count>
+
+  ...
+
+  Constraints:
+    • <constraint 1>
+    • <constraint 2>
+
+  Custom skills to generate:
+    • <skill-1>: <what it does>
+    • <skill-2>: <what it does>
+```
+
+Ask: **Approve, refine, or cancel?**
+
+### Step 5: Refinement (if needed)
+
+If the user wants changes:
+1. Take their feedback as natural language
+2. Re-run the affected passes with the feedback as additional context
+3. Update spec.yaml
+4. Return to the review gate
+
+Common refinement requests:
+- "Split epic X into two epics"
+- "Move module Y to an earlier phase"
+- "Add a constraint about Z"
+- "This task is too big, break it down further"
+- "Remove the reporting module, that's out of scope"
+
+Loop until the user approves.
+
+### Step 6: Generate Skills
+
+After approval, for each skill identified in pass-4:
+
+1. Create `.claude/skills/<skill-name>/SKILL.md` with proper frontmatter
+2. Write the skill body with:
+   - Step-by-step instructions specific to this project's stack
+   - References to project context files
+   - Output format expectations
+   - Examples from the spec
+
+Use the `/skill-creator` skill's patterns for writing good skill files.
+
+### Step 7: Execution Handoff
+
+After skills are generated, present the execution plan:
+
+```
+Ready to execute. How would you like to proceed?
+
+  1. Phase-by-phase (recommended) — execute one phase at a time with review gates
+  2. Full auto — execute all phases sequentially
+  3. Manual — I'll run /deliver for individual tasks myself
+```
+
+**Phase-by-phase mode** (recommended):
+- For each phase, iterate through its epics and tasks in dependency order
+- For each task, construct a `/deliver` call with the task's description from spec.yaml
+- After each phase completes, update spec.yaml status and ask user to review before next phase
+- Parallelizable phases: tasks without inter-dependencies can be delivered concurrently via subagents
+
+**Constructing deliver calls from spec.yaml tasks**:
+```
+/deliver "<task.title> — <task.description>. Target files: <task.files_likely>. Risk: <task.risk_tier>. Spec ref: <task.id>"
+```
+
+### Resuming
+
+If the session is interrupted, the user can run `/ingest <spec-id>` again. Check `spec.yaml` status:
+- `pending-analysis`: start from pass 1
+- `draft`: show the review gate
+- `approved`: resume skill generation or execution
+- `in-progress`: find the last completed phase and resume from the next one
+
+## Output Protocol
+
+All intermediate outputs go to `.forge/specs/<spec-id>/`:
+- `meta.json` — source file metadata
+- `analysis.json` — project metadata from init
+- `pass-1-structure.json` — extracted structure
+- `pass-2-domains.json` — domain mapping
+- `pass-3-breakdown.json` — epic/feature/task breakdown
+- `pass-4-skills.json` — identified skills
+- `spec.yaml` — the final synthesized plan
+- `refinement-log.json` — history of user refinements

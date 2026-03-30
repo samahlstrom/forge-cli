@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { init } from './commands/init.js';
+import { ingest } from './commands/ingest.js';
 import { add } from './commands/add.js';
 import { remove } from './commands/remove.js';
 import { upgrade } from './commands/upgrade.js';
@@ -19,7 +20,15 @@ program
 	.option('--preset <preset>', 'Skip detection and use a specific preset')
 	.option('--force', 'Overwrite existing harness files')
 	.option('--yes', 'Accept all defaults without prompting')
+	.option('--spec <file>', 'Analyze a spec document to pre-fill project configuration')
 	.action(init);
+
+program
+	.command('ingest <file>')
+	.description('Ingest a spec document for project planning and decomposition')
+	.option('--chunk-size <pages>', 'Pages per chunk for PDF processing', '20')
+	.option('--resume <spec-id>', 'Resume analysis of an existing spec')
+	.action(ingest);
 
 program
 	.command('add <addon>')

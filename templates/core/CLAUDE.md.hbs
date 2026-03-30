@@ -12,6 +12,12 @@
 
 - **Name**: {{project.name}}
 - **Stack preset**: {{project.preset}}
+{{#if onboarding.description}}
+- **Description**: {{onboarding.description}}
+{{/if}}
+{{#if onboarding.architecture}}
+- **Architecture**: {{onboarding.architecture}}
+{{/if}}
 
 ## Workflow
 
@@ -20,6 +26,17 @@ All non-trivial work flows through the `/deliver` command:
 2. Pipeline: intake → classify → decompose → execute → verify → deliver
 3. Every edit is tracked via beads (`.forge/beads/`)
 4. Verification runs automatically before delivery
+
+## Spec Ingestion
+
+For large specs, PRDs, or requirements documents:
+1. `/ingest <spec-id>` — parse a spec into epics, features, and atomic tasks
+2. Multi-pass analysis: extract → map domains → decompose → identify skills
+3. Review and refine the plan before writing any code
+4. Generate custom skills for repetitive patterns
+5. Execute phase-by-phase through `/deliver`
+
+Specs are stored in `.forge/specs/`. Run `forge ingest <file>` to add a new spec.
 
 ## Quality Gates
 

@@ -2,10 +2,39 @@
 
 > Project-specific knowledge for agents. This file is yours — forge will never overwrite it on upgrade.
 
-## Architecture Notes
+## Overview
 
-<!-- Describe your data model, key services, and important architectural decisions -->
-<!-- Example: "We use a repository pattern with service layers. Data flows: Route → Service → Repository → DB" -->
+{{#if onboarding.description}}
+{{onboarding.description}}
+{{else}}
+<!-- Describe what you're building -->
+{{/if}}
+
+## Project Type
+
+{{#if onboarding.projectType}}
+**Type**: {{onboarding.projectType}}
+{{/if}}
+
+## Architecture
+
+{{#if onboarding.architecture}}
+**Style**: {{onboarding.architecture}}
+{{else}}
+<!-- Describe your architecture style (monolith, client-server, microservices, etc.) -->
+{{/if}}
+
+{{#if has_modules}}
+## Key Modules
+
+{{#each onboarding.modules}}
+- **{{this}}**
+{{/each}}
+{{else}}
+## Key Modules
+
+<!-- List your main features or modules -->
+{{/if}}
 
 ## Key Conventions
 
@@ -14,14 +43,18 @@
 
 ## Sensitive Paths
 
+{{#if has_sensitive}}
+{{onboarding.sensitivePaths}}
+{{else}}
 <!-- Paths that need extra care — auth, payments, PII, etc. -->
 <!-- These will auto-escalate to T3 risk tier during classification -->
-<!-- Example:
-- src/auth/ — authentication and session management
-- src/payments/ — Stripe integration, handles payment data
--->
+{{/if}}
 
 ## Domain Knowledge
 
+{{#if has_domain_rules}}
+{{onboarding.domainRules}}
+{{else}}
 <!-- Business logic that agents need to understand -->
-<!-- Example: "Users have one of three roles: patient, provider, admin. Providers can only see their own patients." -->
+<!-- Example: "Users have one of three roles: patient, provider, admin." -->
+{{/if}}
