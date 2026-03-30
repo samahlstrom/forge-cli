@@ -30,7 +30,7 @@ export async function ingest(files: string[], options: IngestOptions): Promise<v
 	p.intro(chalk.bold('forge') + chalk.dim(' — Spec Ingestion'));
 
 	// Resolve and validate all spec files
-	const resolvedFiles: { path: string; ext: string; name: string; sizeMB: string; pageCount: number | null }[] = [];
+	const resolvedFiles: { path: string; ext: string; name: string; sizeDisplay: string; sizeBytes: number; pageCount: number | null }[] = [];
 
 	for (const file of files) {
 		const specPath = resolve(file);
@@ -47,14 +47,17 @@ export async function ingest(files: string[], options: IngestOptions): Promise<v
 		}
 
 		const fileStats = await stat(specPath);
-		const sizeMB = (fileStats.size / (1024 * 1024)).toFixed(1);
+		const sizeBytes = fileStats.size;
+		const sizeMB = sizeBytes < 102400
+			? `${(sizeBytes / 1024).toFixed(0)} KB`
+			: `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 
 		let pageCount: number | null = null;
 		if (ext === '.pdf') {
 			pageCount = await detectPageCount(specPath);
 		}
 
-		resolvedFiles.push({ path: specPath, ext, name: basename(specPath), sizeMB, pageCount });
+		resolvedFiles.push({ path: specPath, ext, name: basename(specPath), sizeDisplay: sizeMB, sizeBytes, pageCount });
 	}
 
 	const isMulti = resolvedFiles.length > 1;
@@ -66,14 +69,14 @@ export async function ingest(files: string[], options: IngestOptions): Promise<v
 		for (const f of resolvedFiles) {
 			const format = f.ext === '.pdf' ? 'PDF' : f.ext === '.md' || f.ext === '.markdown' ? 'MD' : 'TXT';
 			const pageInfo = f.pageCount ? ` (${f.pageCount}p)` : '';
-			infoLines.push(`  ${chalk.dim('•')} ${chalk.cyan(f.name)} ${chalk.dim(`${format}, ${f.sizeMB} MB${pageInfo}`)}`);
+			infoLines.push(`  ${chalk.dim('•')} ${chalk.cyan(f.name)} ${chalk.dim(`${format}, ${f.sizeDisplay}${pageInfo}`)}`);
 		}
 	} else {
 		const f = resolvedFiles[0];
 		const format = f.ext === '.pdf' ? 'PDF' : f.ext === '.md' || f.ext === '.markdown' ? 'Markdown' : 'Text';
 		infoLines.push(`File:     ${chalk.cyan(f.name)}`);
 		infoLines.push(`Format:   ${chalk.cyan(format)}`);
-		infoLines.push(`Size:     ${chalk.cyan(f.sizeMB + ' MB')}`);
+		infoLines.push(`Size:     ${chalk.cyan(f.sizeDisplay)}`);
 		if (f.pageCount) infoLines.push(`Pages:    ${chalk.cyan(String(f.pageCount))}`);
 	}
 
@@ -130,7 +133,7 @@ export async function ingest(files: string[], options: IngestOptions): Promise<v
 				original: f.name,
 				stored: sourceFiles[i],
 				format: f.ext.replace('.', ''),
-				size_mb: parseFloat(f.sizeMB),
+				size_mb: parseFloat((f.sizeBytes / (1024 * 1024)).toFixed(2)),
 				pages: f.pageCount,
 			})),
 			combined: combinedPath ? 'combined.md' : null,
@@ -149,7 +152,8 @@ export async function ingest(files: string[], options: IngestOptions): Promise<v
 		spinner.start('Analyzing spec with Claude Code...');
 
 		let analysis: SpecAnalysis | null = null;
-		const analysisTarget = combinedPath ?? resolvedFiles[0].path;
+		// Use copied files in .forge/specs/ (not originals) so Claude can always access them
+		const analysisTarget = combinedPath ?? join(specDir, sourceFiles[0]);
 		const analysisExt = combinedPath ? '.md' : resolvedFiles[0].ext;
 		const analysisPagesCount = combinedPath ? null : resolvedFiles[0].pageCount;
 
