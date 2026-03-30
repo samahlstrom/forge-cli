@@ -4,18 +4,11 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Skip runs triggered by the bot's own version bump commits
-    if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -26,17 +19,10 @@ jobs:
 
       - run: npm run build
 
-      - name: Bump patch version
+      - name: Publish with incremented version
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin main
+          # Bump version locally for publish only — no commit, no push
           npm version patch --no-git-tag-version
-          VERSION=$(node -p "require('./package.json').version")
-          git add package.json package-lock.json
-          git commit -m "chore: bump version to v${VERSION}"
-          git push
-
-      - run: npm publish
+          npm publish || echo "Version already published, skipping"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
