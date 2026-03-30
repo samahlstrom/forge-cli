@@ -5,7 +5,7 @@ AI agent pipeline scaffolding for [Claude Code](https://docs.anthropic.com/en/do
 ## Install
 
 ```bash
-npx forge-cli init
+npx @samahlstrom/forge-cli init
 ```
 
 That's it. One command in any project directory.
@@ -27,7 +27,7 @@ That's it. One command in any project directory.
 
 ```bash
 mkdir my-app && cd my-app && git init
-npx forge-cli init
+npx @samahlstrom/forge-cli init
 ```
 
 The onboarding asks what language, framework, and project type you want, then generates everything.
@@ -36,7 +36,7 @@ The onboarding asks what language, framework, and project type you want, then ge
 
 ```bash
 cd my-existing-project
-npx forge-cli init
+npx @samahlstrom/forge-cli init
 ```
 
 Forge auto-detects your stack (language, framework, test runner, linter) and generates a harness that matches.
@@ -45,7 +45,7 @@ Forge auto-detects your stack (language, framework, test runner, linter) and gen
 
 ```bash
 mkdir my-app && cd my-app && git init
-npx forge-cli init --spec ~/Downloads/project-spec.pdf
+npx @samahlstrom/forge-cli init --spec ~/Downloads/project-spec.pdf
 ```
 
 Forge analyzes the spec with Claude, extracts project metadata (language, modules, architecture, constraints), and pre-fills everything. No manual onboarding needed.
@@ -72,7 +72,7 @@ The pipeline:
 
 ```bash
 # Add a spec to your project
-npx forge-cli ingest ~/Downloads/platform-spec.pdf
+npx @samahlstrom/forge-cli ingest ~/Downloads/platform-spec.pdf
 
 # Then in Claude Code:
 /ingest spec-a1b2

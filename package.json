@@ -1,5 +1,5 @@
 {
-	"name": "forge-cli",
+	"name": "@samahlstrom/forge-cli",
 	"version": "0.1.0",
 	"description": "Agent harness scaffolding for Claude Code — orchestration, decomposition, specialist agents, verification, and delivery.",
 	"type": "module",
@@ -32,6 +32,9 @@
 	],
 	"author": "",
 	"license": "MIT",
+	"publishConfig": {
+		"access": "public"
+	},
 	"engines": {
 		"node": ">=18"
 	},
