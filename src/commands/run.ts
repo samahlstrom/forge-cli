@@ -12,6 +12,7 @@ interface RunOptions {
 	concurrency?: string;
 	budget?: string;
 	review?: boolean;
+	yes?: boolean;
 }
 
 interface TaskReport {
@@ -45,7 +46,7 @@ export async function run(specId: string, options: RunOptions): Promise<void> {
 	const cwd = process.cwd();
 	const concurrency = parseInt(options.concurrency ?? '1', 10);
 	const budget = options.budget ? parseFloat(options.budget) : undefined;
-	const reviewEnabled = options.review !== false;
+	const reviewEnabled = options.review !== false && !options.yes;
 
 	p.intro(chalk.bold('forge run') + chalk.dim(` — ${specId}`));
 
@@ -84,13 +85,15 @@ export async function run(specId: string, options: RunOptions): Promise<void> {
 	if (concurrency > 1) {
 		p.log.info(`Concurrency: ${chalk.cyan(String(concurrency))} parallel worktrees`);
 	}
-	const confirm = await p.confirm({
-		message: 'Continue?',
-		initialValue: true,
-	});
-	if (p.isCancel(confirm) || !confirm) {
-		p.cancel('Run cancelled.');
-		process.exit(0);
+	if (!options.yes) {
+		const confirm = await p.confirm({
+			message: 'Continue?',
+			initialValue: true,
+		});
+		if (p.isCancel(confirm) || !confirm) {
+			p.cancel('Run cancelled.');
+			process.exit(0);
+		}
 	}
 
 	// Set up reports directory
@@ -143,7 +146,10 @@ export async function run(specId: string, options: RunOptions): Promise<void> {
 					await writePhaseReport(reportsDir, currentPhaseReport);
 				}
 
-				if (reviewEnabled) {
+				if (options.yes) {
+					// Auto-pilot: continue automatically
+					p.log.info(chalk.dim(`Phase transition — ${remaining.length} tasks unblocking...`));
+				} else if (reviewEnabled) {
 					const elapsed = formatElapsed(Date.now() - startTime);
 					p.log.info(`\n${chalk.bold('Phase checkpoint')} — ${completed} completed, ${failed} failed, ${remaining.length} remaining (${elapsed})`);
 

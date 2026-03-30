@@ -203,35 +203,35 @@ Use the `/skill-creator` skill's patterns for writing good skill files.
 
 ### Step 7: Seed Beads
 
-After skills are generated, create beads for all tasks in the plan:
+After skills are generated, create beads for all tasks in the plan.
+
+**IMPORTANT: Do NOT create beads manually with `bd create`. Only use `forge seed`.**
 
 1. Run: `forge seed <spec-id>`
-2. This creates bd issues for every phase, epic, and task in spec.yaml
-3. Dependencies are wired so `bd ready` returns only unblocked tasks
+2. This creates bd issues for every phase, epic, and task in spec.yaml with correct types and dependency links
+3. Do NOT use `bd create` directly — `forge seed` handles the full dependency graph
 4. Report the counts to the user
 
 ### Step 8: Execution Handoff
 
-After beads are seeded, present the execution plan:
+After beads are seeded, tell the user to exit Claude Code and run in their terminal:
 
 ```
-Ready to execute. How would you like to proceed?
-
-  1. Auto-pilot (recommended) — run `forge run <spec-id>` to execute all tasks automatically
-  2. Phase-by-phase — run `forge run <spec-id> --phase 1` one phase at a time
-  3. Manual — I'll run /deliver for individual tasks myself, using `bd ready` to pick the next one
+forge run <spec-id> --yes
 ```
 
-**Auto-pilot mode** (recommended):
-- User exits Claude Code and runs `forge run <spec-id>` in the terminal
-- The orchestrator picks ready tasks via `bd ready`, invokes `claude -p` with `/deliver` for each
-- Pauses between phases for review (use `--no-review` to skip)
-- Each task runs in an isolated `claude -p` session to avoid context overflow
+Options:
+- `--yes` — skip confirmation prompts (required when run non-interactively)
+- `--phase 1` — run only one phase at a time
+- `--concurrency 3` — run 3 tasks in parallel worktrees
+- `--no-review` — skip review gates between phases
 
-**Manual mode**:
-- User runs `bd ready -l "spec:<spec-id>"` to see available tasks
-- Picks a task and runs `/deliver` with its description
-- Closes the bead with `bd close <id>` when done
+**IMPORTANT: `forge run` must be run directly in the terminal, NOT inside Claude Code.** It spawns its own `claude -p` processes for each task. Tell the user to exit this session first.
+
+For manual execution instead:
+- Run `bd ready -t task -l "spec:<spec-id>"` to see available tasks
+- Pick a task and run `/deliver` with its description
+- Close the bead with `bd close <id>` when done
 
 ### Resuming
 
@@ -239,7 +239,7 @@ If the session is interrupted, the user can run `/ingest <spec-id>` again. Check
 - `pending-analysis`: start from pass 1
 - `draft`: show the review gate
 - `approved`: resume skill generation, seeding, or execution
-- `in-progress`: run `forge run <spec-id>` to resume — it picks up where it left off via `bd ready`
+- `in-progress`: run `forge run <spec-id> --yes` to resume — it picks up where it left off via `bd ready`
 
 ## Output Protocol
 

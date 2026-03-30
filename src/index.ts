@@ -73,6 +73,7 @@ program
 	.option('--concurrency <number>', 'Max parallel tasks', '1')
 	.option('--budget <usd>', 'Max USD spend per task via claude -p')
 	.option('--no-review', 'Skip review gates between phases')
+	.option('--yes', 'Skip all confirmation prompts (for non-interactive use)')
 	.action(run);
 
 program.parse();
