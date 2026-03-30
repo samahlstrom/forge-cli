@@ -5,21 +5,10 @@ AI agent pipeline scaffolding for [Claude Code](https://docs.anthropic.com/en/do
 ## Install
 
 ```bash
-npx @samahlstrom/forge-cli init
+npm install -g @samahlstrom/forge-cli
 ```
 
-That's it. One command in any project directory.
-
-## What it does
-
-`forge init` scans your project, asks a few questions about what you're building, and generates a complete `.forge/` harness with:
-
-- **Pipeline scripts** — a state machine that routes work through intake, classification, decomposition, execution, verification, and delivery
-- **Specialist agents** — architect, backend, frontend, quality, and security agents (only the ones your project needs)
-- **Risk classification** — T1/T2/T3 tiers that determine how much decomposition and verification a task gets
-- **Bead tracking** — every unit of work is tracked with file locking, checkpoints, and audit trails
-- **Hooks** — pre-edit and post-edit hooks that enforce tracked work and log modifications
-- **Skills** — `/deliver`, `/ingest`, and `/skill-creator` commands for Claude Code
+This installs `forge` as a global command. Use it in any project from now on.
 
 ## Quick start
 
@@ -27,7 +16,7 @@ That's it. One command in any project directory.
 
 ```bash
 mkdir my-app && cd my-app && git init
-npx @samahlstrom/forge-cli init
+forge init
 ```
 
 The onboarding asks what language, framework, and project type you want, then generates everything.
@@ -36,7 +25,7 @@ The onboarding asks what language, framework, and project type you want, then ge
 
 ```bash
 cd my-existing-project
-npx @samahlstrom/forge-cli init
+forge init
 ```
 
 Forge auto-detects your stack (language, framework, test runner, linter) and generates a harness that matches.
@@ -45,10 +34,34 @@ Forge auto-detects your stack (language, framework, test runner, linter) and gen
 
 ```bash
 mkdir my-app && cd my-app && git init
-npx @samahlstrom/forge-cli init --spec ~/Downloads/project-spec.pdf
+forge init --spec ~/Downloads/project-spec.pdf
 ```
 
 Forge analyzes the spec with Claude, extracts project metadata (language, modules, architecture, constraints), and pre-fills everything. No manual onboarding needed.
+
+### From multiple spec documents
+
+```bash
+mkdir my-app && cd my-app && git init
+forge ingest \
+  ~/Downloads/architecture.md \
+  ~/Downloads/engineering-backlog.md \
+  ~/Downloads/database-schema.md
+forge init
+```
+
+Forge combines multiple documents into one spec, analyzes it, and sets up the harness.
+
+## What it does
+
+`forge init` scans your project, asks a few questions about what you're building, and generates a complete `.forge/` harness with:
+
+- **Pipeline scripts** — a state machine that routes work through intake, classification, decomposition, execution, verification, and delivery
+- **Specialist agents** — architect, backend, frontend, quality, and security agents (only the ones your project needs)
+- **Risk classification** — T1/T2/T3 tiers that determine how much decomposition and verification a task gets
+- **Task tracking** — work tracked via [`bd`](https://github.com/steveyegge/beads) (Dolt-backed issue tracker for AI agents)
+- **Hooks** — pre-edit and post-edit hooks that enforce tracked work
+- **Skills** — `/deliver`, `/ingest`, and `/skill-creator` commands for Claude Code
 
 ## Usage
 
@@ -71,8 +84,11 @@ The pipeline:
 ### `/ingest` — decompose a spec into a project plan
 
 ```bash
-# Add a spec to your project
-npx @samahlstrom/forge-cli ingest ~/Downloads/platform-spec.pdf
+# Add specs to your project
+forge ingest ~/Downloads/platform-spec.pdf
+
+# Or multiple documents at once
+forge ingest architecture.md backlog.md schema.md
 
 # Then in Claude Code:
 /ingest spec-a1b2
@@ -100,7 +116,7 @@ Create new Claude Code skills for domain-specific workflows. The ingestion syste
 |---|---|
 | `forge init` | Initialize harness in current project |
 | `forge init --spec <file>` | Initialize from a spec document (PDF, markdown, text) |
-| `forge ingest <file>` | Add a spec to an existing project for analysis |
+| `forge ingest <files...>` | Add one or more spec documents for analysis |
 | `forge add <addon>` | Install an addon (browser-testing, compliance-hipaa, compliance-soc2) |
 | `forge remove <addon>` | Remove an addon |
 | `forge status` | Show harness status, agents, addons |
