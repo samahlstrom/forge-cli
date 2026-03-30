@@ -6,7 +6,7 @@ build:
 	go build -ldflags "-X github.com/samahlstrom/forge-cli/internal/static.Version=$(VERSION)" -o bin/forge .
 
 install:
-	go install -ldflags "-X github.com/samahlstrom/forge-cli/internal/static.Version=$(VERSION)" .
+	go build -ldflags "-X github.com/samahlstrom/forge-cli/internal/static.Version=$(VERSION)" -o $(shell go env GOPATH)/bin/forge .
 
 clean:
 	rm -f bin/forge bin/forge-go
