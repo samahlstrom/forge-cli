@@ -173,8 +173,22 @@ export async function run(specId: string, options: RunOptions): Promise<void> {
 
 		if (readyTasks.length === 0) continue;
 
+		// Sort ready tasks by phase number so we always process lowest phase first
+		readyTasks.sort((a, b) => {
+			const phaseA = parseInt(a.labels?.find(l => l.startsWith('phase:'))?.replace('phase:', '') ?? '99', 10);
+			const phaseB = parseInt(b.labels?.find(l => l.startsWith('phase:'))?.replace('phase:', '') ?? '99', 10);
+			return phaseA - phaseB;
+		});
+
+		// Only process tasks from the lowest available phase
+		const lowestPhase = readyTasks[0].labels?.find(l => l.startsWith('phase:')) ?? '';
+		readyTasks = readyTasks.filter(t => {
+			const tp = t.labels?.find(l => l.startsWith('phase:')) ?? '';
+			return tp === lowestPhase;
+		});
+
 		// Detect phase transition
-		const taskPhase = readyTasks[0].labels?.find(l => l.startsWith('phase:')) ?? '';
+		const taskPhase = lowestPhase;
 		if (taskPhase !== currentPhase) {
 			if (currentPhase && currentPhaseReport) {
 				currentPhaseReport.finished_at = new Date().toISOString();
