@@ -8,6 +8,7 @@ import { status } from './commands/status.js';
 import { doctor } from './commands/doctor.js';
 import { seed } from './commands/seed.js';
 import { run } from './commands/run.js';
+import { runStatus } from './commands/run-status.js';
 
 const program = new Command();
 
@@ -77,5 +78,10 @@ program
 	.option('--api-key <key>', 'Anthropic API key (bypasses Claude Code subscription limits)')
 	.option('--model <model>', 'Model to use for worker agents (e.g., claude-sonnet-4-6)')
 	.action(run);
+
+program
+	.command('run-status <spec-id>')
+	.description('Show health and progress of a spec run')
+	.action(runStatus);
 
 program.parse();
