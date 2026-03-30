@@ -12,6 +12,8 @@ CLASSIFY="${PIPELINE_DIR}/classify.sh"
 VERIFY="${PIPELINE_DIR}/verify.sh"
 DELIVER="${PIPELINE_DIR}/deliver.sh"
 PROMPTS_DIR="${PIPELINE_DIR}"
+REVIEW_PLAN="${PROMPTS_DIR}/review-plan.md"
+EVALUATE="${PROMPTS_DIR}/evaluate.md"
 
 # --- Helpers ---
 
@@ -200,6 +202,22 @@ stage_decompose() {
     "decompose" \
     "${PROMPTS_DIR}/decompose.md" \
     "$output_file" \
+    "review-plan" \
+    "$task_id" \
+    "{{stackFile}}" "{{projectFile}}"
+  exit 0
+}
+
+stage_review_plan() {
+  local task_id="$1"
+  local task_dir="${FORGE_DIR}/pipeline/runs/${task_id}"
+  local output_file="${task_dir}/plan-review.json"
+  mkdir -p "$task_dir"
+
+  emit_pause \
+    "review-plan" \
+    "${PROMPTS_DIR}/review-plan.md" \
+    "$output_file" \
     "execute" \
     "$task_id" \
     "{{stackFile}}" "{{projectFile}}"
@@ -225,6 +243,79 @@ stage_execute() {
   exit 0
 }
 
+stage_evaluate() {
+  local task_id="$1" tier="$2"
+  local task_dir="${FORGE_DIR}/pipeline/runs/${task_id}"
+
+  # Max evaluation iterations — capped at 3 for all tiers.
+  # Quality degrades past 3 cycles; if it's not fixed by then,
+  # the approach needs to change, not iterate further.
+  local max_iterations=3
+
+  # Find current iteration number
+  local iteration=1
+  while [[ -f "${task_dir}/evaluation-${iteration}.json" ]]; do
+    iteration=$((iteration + 1))
+  done
+
+  if [[ $iteration -gt $max_iterations ]]; then
+    emit_error "evaluate" "Max evaluation iterations (${max_iterations}) reached. Task cannot pass quality gates." \
+      "${task_dir}/evaluation-$((iteration - 1)).json" ""
+    exit 1
+  fi
+
+  local output_file="${task_dir}/evaluation-${iteration}.json"
+
+  emit_pause \
+    "evaluate" \
+    "${PROMPTS_DIR}/evaluate.md" \
+    "$output_file" \
+    "evaluate-check" \
+    "$task_id" \
+    "{{stackFile}}" "{{projectFile}}"
+  exit 0
+}
+
+stage_evaluate_check() {
+  local task_id="$1" tier="$2"
+  local task_dir="${FORGE_DIR}/pipeline/runs/${task_id}"
+
+  # Find the latest evaluation file
+  local latest_iteration=1
+  while [[ -f "${task_dir}/evaluation-$((latest_iteration + 1)).json" ]]; do
+    latest_iteration=$((latest_iteration + 1))
+  done
+
+  local eval_file="${task_dir}/evaluation-${latest_iteration}.json"
+  if [[ ! -f "$eval_file" ]]; then
+    emit_error "evaluate-check" "No evaluation file found" "" ""
+    exit 1
+  fi
+
+  local verdict
+  verdict=$(jq -r '.verdict // "fail"' "$eval_file")
+
+  case "$verdict" in
+    pass)
+      # Evaluation passed — proceed to delivery
+      echo "pass"
+      ;;
+    revise)
+      # Needs revision — go back to execute with revision brief
+      echo "revise"
+      ;;
+    fail)
+      emit_error "evaluate" "Evaluation failed" "$eval_file" \
+        "bash ${PIPELINE_DIR}/orchestrator.sh --resume ${task_id} --stage execute"
+      exit 1
+      ;;
+    *)
+      emit_error "evaluate-check" "Unknown verdict: ${verdict}" "$eval_file" ""
+      exit 1
+      ;;
+  esac
+}
+
 stage_verify() {
   local task_id="$1" tier="$2"
 
@@ -247,6 +338,9 @@ stage_verify() {
       "bash ${PIPELINE_DIR}/orchestrator.sh --resume ${task_id} --stage verify"
     exit 1
   fi
+
+  # Mechanical checks passed — now run tri-agent evaluation
+  stage_evaluate "$task_id" "$tier"
 }
 
 stage_deliver() {
@@ -304,10 +398,35 @@ if [[ -n "$RESUME_ID" && -n "$RESUME_STAGE" ]]; then
   mode="${mode:-normal}"
 
   case "$RESUME_STAGE" in
-    execute)    stage_execute "$task_id" ;;
-    verify)     stage_verify "$task_id" "$tier" ;;
-    deliver)    stage_deliver "$task_id" ;;
-    *)          emit_error "resume" "Unknown stage: ${RESUME_STAGE}" "" ""; exit 1 ;;
+    review-plan)
+      stage_review_plan "$task_id"
+      ;;
+    execute)
+      stage_execute "$task_id"
+      ;;
+    verify)
+      stage_verify "$task_id" "$tier"
+      ;;
+    evaluate)
+      stage_evaluate "$task_id" "$tier"
+      ;;
+    evaluate-check)
+      eval_result=$(stage_evaluate_check "$task_id" "$tier")
+      if [[ "$eval_result" == "revise" ]]; then
+        # Loop back to execute for revision
+        stage_execute "$task_id"
+      else
+        # Pass — proceed to deliver
+        stage_deliver "$task_id"
+      fi
+      ;;
+    deliver)
+      stage_deliver "$task_id"
+      ;;
+    *)
+      emit_error "resume" "Unknown stage: ${RESUME_STAGE}" "" ""
+      exit 1
+      ;;
   esac
   exit 0
 fi

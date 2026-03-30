@@ -18,6 +18,21 @@ Read it now. It contains `subtasks[]` and `waves[]`.
 - `{{this}}`
 {{/each}}
 
+### Revision Context (if applicable)
+
+Check for evaluation files at `.forge/pipeline/runs/{{bead_id}}/evaluation-*.json`. If any exist, this is a **revision iteration** — the evaluators found issues with the previous implementation.
+
+Read the latest evaluation file. Pay special attention to:
+- `revision_brief` — specific instructions for what needs to change
+- `critical_findings_count` and `high_findings_count` — the severity of issues
+- Each evaluator's `findings[]` — the specific file:line problems to fix
+
+**In revision mode:**
+- Focus ONLY on the subtasks/files identified in the revision brief
+- Do NOT re-implement things that already passed evaluation
+- Address findings in priority order: critical first, then high, then medium
+- If an evaluator's score DECREASED from the previous iteration, the revision made things worse — revert that specific change and try a different approach
+
 ## Execution Protocol
 
 For each wave in order:
@@ -110,6 +125,7 @@ After all waves are done:
    - `{{commands.typecheck}}`
    - `{{commands.lint}}`
    - `{{commands.test}}`
+   - `bash .forge/pipeline/browser-smoke.sh` (if frontend files changed)
 
 2. Compile the execution summary:
 

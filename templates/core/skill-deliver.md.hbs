@@ -12,12 +12,14 @@ User runs `/deliver <description>` or `/deliver --flag`
 2. Read the JSON output line. Branch on `status`:
 
 ### PAUSE
-The pipeline needs LLM work.
+The pipeline needs LLM work (decompose, review-plan, execute, or evaluate).
 - Read the file at `prompt_file` for instructions
 - Read each context file listed in `context[]` from `.forge/context/`
 - Execute the work described in the prompt
 - Write your output to `output_file`
 - Run the `resume` command to continue the pipeline
+
+**For evaluation pauses**: Launch the three evaluator agents (Edgar, Code Quality, Um-Actually) in parallel as subagents. Aggregate their results into the evaluation output format. If the verdict is "revise", the resume command will loop back to execution with the revision brief.
 
 ### HUMAN_INPUT
 The pipeline needs a user decision.

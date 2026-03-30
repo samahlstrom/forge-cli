@@ -605,11 +605,18 @@ func generateHarness(cwd string, detected detect.DetectedStack, answers initAnsw
 		{"core/pipeline/classify.sh.hbs", ".forge/pipeline/classify.sh"},
 		{"core/pipeline/decompose.md.hbs", ".forge/pipeline/decompose.md"},
 		{"core/pipeline/execute.md.hbs", ".forge/pipeline/execute.md"},
+		{"core/pipeline/review-plan.md.hbs", ".forge/pipeline/review-plan.md"},
+		{"core/pipeline/evaluate.md.hbs", ".forge/pipeline/evaluate.md"},
 		{"core/pipeline/verify.sh.hbs", ".forge/pipeline/verify.sh"},
 		{"core/pipeline/deliver.sh.hbs", ".forge/pipeline/deliver.sh"},
 		{"core/agents/architect.md.hbs", ".forge/agents/architect.md"},
 		{"core/agents/quality.md.hbs", ".forge/agents/quality.md"},
 		{"core/agents/security.md.hbs", ".forge/agents/security.md"},
+		{"core/agents/edgar.md.hbs", ".forge/agents/edgar.md"},
+		{"core/agents/code-quality.md.hbs", ".forge/agents/code-quality.md"},
+		{"core/agents/um-actually.md.hbs", ".forge/agents/um-actually.md"},
+		{"core/agents/visual-qa.md.hbs", ".forge/agents/visual-qa.md"},
+		{"core/pipeline/browser-smoke.sh.hbs", ".forge/pipeline/browser-smoke.sh"},
 		{"core/context/project.md.hbs", ".forge/context/project.md"},
 		{"core/hooks/pre-edit.sh.hbs", ".forge/hooks/pre-edit.sh"},
 		{"core/hooks/post-edit.sh.hbs", ".forge/hooks/post-edit.sh"},
@@ -642,6 +649,23 @@ func generateHarness(cwd string, detected detect.DetectedStack, answers initAnsw
 		}
 
 		outputPath := filepath.Join(cwd, outputRel)
+
+		// Merge strategy for files that users may have customized
+		if outputRel == "CLAUDE.md" {
+			content = mergeCLAUDEmd(outputPath, content)
+		} else if outputRel == ".claude/settings.json" {
+			content = mergeSettingsJSON(outputPath, content)
+		} else if outputRel == "forge.yaml" || outputRel == ".forge/context/project.md" {
+			// User-editable config — skip if it already exists (preserve customizations).
+			// Use `forge upgrade` or `--force` to overwrite these files.
+			if !initForce && util.Exists(outputPath) {
+				ui.Log.Step(fmt.Sprintf("Kept existing %s (use --force to overwrite)", outputRel))
+				// Still track the hash of what we *would* have written for upgrade diffing
+				hashes.Files[outputRel] = util.HashContent(content)
+				continue
+			}
+		}
+
 		if err := util.WriteText(outputPath, content); err != nil {
 			return nil, fmt.Errorf("failed to write %s: %w", outputRel, err)
 		}
@@ -682,7 +706,7 @@ func buildTemplateContext(detected detect.DetectedStack, answers initAnswers) re
 	needsFrontend := projectType == "web-app" || projectType == "fullstack"
 	needsBackend := projectType == "web-app" || projectType == "api" || projectType == "fullstack" || projectType == "microservices"
 
-	agents := []any{"architect", "quality", "security"}
+	agents := []any{"architect", "quality", "security", "edgar", "code-quality", "um-actually", "visual-qa"}
 	if needsFrontend {
 		agents = append(agents, "frontend")
 	}
@@ -841,9 +865,188 @@ func displayInitResults(files []generatedFile, specId string) {
 	}
 	ui.Log.Message("")
 	ui.Log.Message(fmt.Sprintf("  %s", ui.Dim("Optional:")))
-	ui.Log.Message(fmt.Sprintf("    %s    — Playwright visual QA", ui.Dim("forge add browser-testing")))
 	ui.Log.Message(fmt.Sprintf("    %s   — HIPAA security checks", ui.Dim("forge add compliance-hipaa")))
+	ui.Log.Message(fmt.Sprintf("    %s    — SOC2 compliance", ui.Dim("forge add compliance-soc2")))
 	ui.Log.Message(fmt.Sprintf("    %s                 — Verify harness health", ui.Dim("forge doctor")))
+}
+
+// --- merge strategies ---
+
+const forgeDelimiter = "<!-- forge:start -->"
+const forgeDelimiterEnd = "<!-- forge:end -->"
+
+// mergeCLAUDEmd preserves existing CLAUDE.md content and appends/replaces the
+// forge-managed section. If the file doesn't exist, returns content as-is.
+func mergeCLAUDEmd(existingPath, forgeContent string) string {
+	existing, err := util.ReadText(existingPath)
+	if err != nil {
+		// No existing file — use forge content directly
+		return forgeContent
+	}
+
+	existing = strings.TrimSpace(existing)
+	if existing == "" {
+		return forgeContent
+	}
+
+	wrappedForge := forgeDelimiter + "\n" + forgeContent + "\n" + forgeDelimiterEnd
+
+	// If the file already has forge delimiters, replace that section
+	startIdx := strings.Index(existing, forgeDelimiter)
+	endIdx := strings.Index(existing, forgeDelimiterEnd)
+	if startIdx != -1 && endIdx != -1 {
+		before := strings.TrimRight(existing[:startIdx], "\n")
+		after := strings.TrimLeft(existing[endIdx+len(forgeDelimiterEnd):], "\n")
+		parts := []string{before, wrappedForge}
+		if after != "" {
+			parts = append(parts, after)
+		}
+		return strings.Join(parts, "\n\n") + "\n"
+	}
+
+	// No existing forge section — append
+	return existing + "\n\n" + wrappedForge + "\n"
+}
+
+// mergeSettingsJSON merges forge permissions and hooks into an existing
+// settings.json without removing user-defined entries. If the file doesn't
+// exist, returns content as-is.
+func mergeSettingsJSON(existingPath, forgeContent string) string {
+	existingData, err := util.ReadText(existingPath)
+	if err != nil {
+		return forgeContent
+	}
+
+	var existing map[string]any
+	if err := json.Unmarshal([]byte(existingData), &existing); err != nil {
+		// Can't parse existing — back it up and overwrite
+		_ = util.WriteText(existingPath+".backup", existingData)
+		return forgeContent
+	}
+
+	var forge map[string]any
+	if err := json.Unmarshal([]byte(forgeContent), &forge); err != nil {
+		return forgeContent
+	}
+
+	// Merge permissions.allow — union of both lists
+	mergePermissionsAllow(existing, forge)
+
+	// Merge hooks — add forge hooks without removing existing ones
+	mergeHooks(existing, forge)
+
+	merged, err := json.MarshalIndent(existing, "", "\t")
+	if err != nil {
+		return forgeContent
+	}
+	return string(merged) + "\n"
+}
+
+func mergePermissionsAllow(existing, forge map[string]any) {
+	forgePerms, ok := forge["permissions"].(map[string]any)
+	if !ok {
+		return
+	}
+	forgeAllow, ok := forgePerms["allow"].([]any)
+	if !ok {
+		return
+	}
+
+	existingPerms, ok := existing["permissions"].(map[string]any)
+	if !ok {
+		existing["permissions"] = forgePerms
+		return
+	}
+
+	existingAllow, ok := existingPerms["allow"].([]any)
+	if !ok {
+		existingPerms["allow"] = forgeAllow
+		return
+	}
+
+	// Build set from existing
+	seen := map[string]bool{}
+	for _, v := range existingAllow {
+		if s, ok := v.(string); ok {
+			seen[s] = true
+		}
+	}
+
+	// Add forge entries that don't already exist
+	for _, v := range forgeAllow {
+		if s, ok := v.(string); ok {
+			if !seen[s] {
+				existingAllow = append(existingAllow, v)
+				seen[s] = true
+			}
+		}
+	}
+	existingPerms["allow"] = existingAllow
+}
+
+func mergeHooks(existing, forge map[string]any) {
+	forgeHooks, ok := forge["hooks"].(map[string]any)
+	if !ok {
+		return
+	}
+
+	existingHooks, ok := existing["hooks"].(map[string]any)
+	if !ok {
+		existing["hooks"] = forgeHooks
+		return
+	}
+
+	// For each hook event (SessionStart, PreToolUse, PostToolUse), merge entries
+	for event, forgeEntries := range forgeHooks {
+		forgeArr, ok := forgeEntries.([]any)
+		if !ok {
+			continue
+		}
+
+		existingArr, ok := existingHooks[event].([]any)
+		if !ok {
+			existingHooks[event] = forgeArr
+			continue
+		}
+
+		// Check if forge hooks are already present (by command string)
+		existingCmds := map[string]bool{}
+		for _, entry := range existingArr {
+			if m, ok := entry.(map[string]any); ok {
+				if hooks, ok := m["hooks"].([]any); ok {
+					for _, h := range hooks {
+						if hm, ok := h.(map[string]any); ok {
+							if cmd, ok := hm["command"].(string); ok {
+								existingCmds[cmd] = true
+							}
+						}
+					}
+				}
+			}
+		}
+
+		for _, entry := range forgeArr {
+			if m, ok := entry.(map[string]any); ok {
+				isNew := true
+				if hooks, ok := m["hooks"].([]any); ok {
+					for _, h := range hooks {
+						if hm, ok := h.(map[string]any); ok {
+							if cmd, ok := hm["command"].(string); ok {
+								if existingCmds[cmd] {
+									isNew = false
+									break
+								}
+							}
+						}
+					}
+				}
+				if isNew {
+					existingArr = append(existingArr, entry)
+				}
+			}
+		}
+		existingHooks[event] = existingArr
+	}
 }
 
 // --- helpers ---

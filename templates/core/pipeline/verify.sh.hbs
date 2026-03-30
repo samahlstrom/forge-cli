@@ -138,6 +138,25 @@ if [[ "$PASSED" == "true" && "$ENABLE_ANTIPATTERN" == "true" ]]; then
   run_check "antipatterns" "$CMD_ANTIPATTERN" "false" || true
 fi
 
+# 7. Browser smoke tests (enabled by default for frontend changes)
+ENABLE_BROWSER=$(read_config "verification.browser.enabled")
+CMD_BROWSER=$(read_config "verification.browser.command")
+CMD_BROWSER="${CMD_BROWSER:-bash .forge/pipeline/browser-smoke.sh}"
+
+if [[ "$PASSED" == "true" && "$ENABLE_BROWSER" == "true" ]]; then
+  # Only run browser tests if frontend files were modified
+  HAS_FRONTEND_CHANGES=false
+  if git diff --name-only HEAD~1 2>/dev/null | grep -qE '\.(tsx|jsx|svelte|vue|css|scss|html)$|/routes/|/pages/|/components/|/app/'; then
+    HAS_FRONTEND_CHANGES=true
+  fi
+
+  if [[ "$HAS_FRONTEND_CHANGES" == "true" ]]; then
+    run_check "browser" "$CMD_BROWSER" "false" || true
+  else
+    RESULTS+=("{\"check\":\"browser\",\"status\":\"skipped\",\"reason\":\"no frontend files changed\"}")
+  fi
+fi
+
 # --- Build results JSON ---
 
 RESULTS_JSON=$(printf '%s\n' "${RESULTS[@]}" | jq -s '.')
