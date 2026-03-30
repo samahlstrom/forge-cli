@@ -553,10 +553,21 @@ async function generateHarness(
 	// Initialize bd (beads) for task tracking
 	try {
 		const { execaCommand } = await import('execa');
+		// Check if bd is available, install via brew if not
+		try {
+			await execaCommand('bd --version', { shell: true, timeout: 5000 });
+		} catch {
+			try {
+				await execaCommand('brew install beads', { shell: true, timeout: 120000 });
+			} catch {
+				// brew not available or install failed — skip bd setup
+				throw new Error('bd not available');
+			}
+		}
 		await execaCommand('bd init --quiet', { cwd, shell: true, timeout: 15000 });
 		await execaCommand('bd setup claude', { cwd, shell: true, timeout: 15000 });
 	} catch {
-		// bd not installed — that's OK, user can install later
+		// bd install or init failed — not critical
 	}
 
 	return files;
