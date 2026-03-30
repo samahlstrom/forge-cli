@@ -13,6 +13,8 @@ interface RunOptions {
 	budget?: string;
 	review?: boolean;
 	yes?: boolean;
+	apiKey?: string;
+	model?: string;
 }
 
 interface TaskReport {
@@ -47,6 +49,8 @@ export async function run(specId: string, options: RunOptions): Promise<void> {
 	const concurrency = parseInt(options.concurrency ?? '1', 10);
 	const budget = options.budget ? parseFloat(options.budget) : undefined;
 	const reviewEnabled = options.review !== false && !options.yes;
+	const apiKey = options.apiKey ?? process.env.ANTHROPIC_API_KEY ?? '';
+	const model = options.model ?? process.env.FORGE_MODEL ?? 'claude-sonnet-4-6';
 
 	p.intro(chalk.bold('forge run') + chalk.dim(` — ${specId}`));
 
@@ -80,8 +84,17 @@ export async function run(specId: string, options: RunOptions): Promise<void> {
 		return;
 	}
 
-	// Warn about permissions
+	// Warn about permissions and API key
 	p.log.warn(chalk.yellow('Auto-pilot uses --dangerously-skip-permissions and git worktrees for isolation.'));
+	if (apiKey) {
+		p.log.info(`Using API key ${chalk.green('(bypasses subscription limits)')}`);
+	} else {
+		p.log.warn(chalk.yellow('No ANTHROPIC_API_KEY set — workers use your Claude Code subscription limit.'));
+		p.log.info(chalk.dim('Set ANTHROPIC_API_KEY or use --api-key to avoid daily caps.'));
+	}
+	if (model) {
+		p.log.info(`Model: ${chalk.cyan(model)}`);
+	}
 	if (concurrency > 1) {
 		p.log.info(`Concurrency: ${chalk.cyan(String(concurrency))} parallel worktrees`);
 	}
@@ -223,7 +236,7 @@ export async function run(specId: string, options: RunOptions): Promise<void> {
 
 		// Execute batch in parallel worktrees
 		const results = await Promise.allSettled(
-			batch.map(task => executeTaskInWorktree(task, specId, cwd, budget))
+			batch.map(task => executeTaskInWorktree(task, specId, cwd, budget, apiKey, model))
 		);
 
 		for (let i = 0; i < results.length; i++) {
@@ -325,6 +338,8 @@ async function executeTaskInWorktree(
 	specId: string,
 	cwd: string,
 	budget?: number,
+	apiKey?: string,
+	model?: string,
 ): Promise<TaskReport> {
 	const startedAt = new Date();
 	const tier = task.labels?.find(l => l.startsWith('tier:'))?.replace('tier:', '') ?? 'T2';
@@ -383,55 +398,98 @@ async function executeTaskInWorktree(
 		try {
 			const args = ['claude', '-p', '--dangerously-skip-permissions', '--output-format', 'json'];
 			if (budget) args.push('--max-budget-usd', String(budget));
+			if (model) args.push('--model', model);
 
-			await execaCommand(
-				`cat "${tmpFile}" | ${args.join(' ')}`,
-				{ shell: true, cwd: worktreePath, timeout: 600000 },
-			);
+			const maxRetries = 5;
+			let attempt = 0;
+			let lastError: unknown;
 
-			// Read the agent's self-report if it wrote one
-			try {
-				const agentReport = JSON.parse(await readFile(reportPath, 'utf-8'));
-				report.blockers = agentReport.blockers ?? [];
-				report.errors = agentReport.errors ?? [];
-				report.summary = agentReport.summary ?? '';
-			} catch {
-				report.summary = 'Task completed (no agent report generated)';
-			}
-
-			// Get list of files changed
-			try {
-				const diffResult = await execaCommand('git diff --name-only HEAD', {
-					shell: true, cwd: worktreePath, timeout: 10000,
-				});
-				report.files_changed = diffResult.stdout.trim().split('\n').filter(Boolean);
-			} catch { /* ignore */ }
-
-			// Commit changes in worktree
-			try {
-				await execaCommand('git add -A', { shell: true, cwd: worktreePath, timeout: 10000 });
-				const commitMsg = `forge: ${task.title} [${specTaskId ?? task.id}]`;
-				await execaCommand(`git commit -m "${commitMsg}" --allow-empty`, {
-					shell: true, cwd: worktreePath, timeout: 15000,
-				});
-			} catch {
-				// Nothing to commit
-			}
-
-			// Merge worktree branch back to main
-			try {
-				const mainBranch = await getMainBranch(cwd);
-				await execaCommand(`git checkout ${mainBranch}`, { shell: true, cwd, timeout: 10000 });
-				await execaCommand(`git merge ${branchName} --no-edit`, { shell: true, cwd, timeout: 30000 });
-				report.status = 'success';
-			} catch (mergeErr) {
-				// Merge conflict — abort and preserve branch for manual resolution
+			while (attempt < maxRetries) {
+				attempt++;
 				try {
-					await execaCommand('git merge --abort', { shell: true, cwd, timeout: 10000 });
+					const env = apiKey ? { ...process.env, ANTHROPIC_API_KEY: apiKey } : undefined;
+					const result = await execaCommand(
+						`cat "${tmpFile}" | ${args.join(' ')}`,
+						{ shell: true, cwd: worktreePath, timeout: 600000, reject: false, env },
+					);
+
+					// Check for rate limit in output
+					const output = result.stdout || result.stderr || '';
+					if (result.exitCode !== 0 && isRateLimited(output)) {
+						const waitMs = getRateLimitWait(output, attempt);
+						p.log.warn(chalk.yellow(`  Rate limited on "${task.title}" — waiting ${formatElapsed(waitMs)} before retry ${attempt}/${maxRetries}`));
+						await sleep(waitMs);
+						continue;
+					}
+
+					if (result.exitCode !== 0) {
+						lastError = new Error(output || `claude exited with code ${result.exitCode}`);
+						break; // Non-rate-limit failure, don't retry
+					}
+
+					lastError = null;
+					break; // Success
+				} catch (execErr) {
+					const errStr = String(execErr);
+					if (isRateLimited(errStr)) {
+						const waitMs = getRateLimitWait(errStr, attempt);
+						p.log.warn(chalk.yellow(`  Rate limited on "${task.title}" — waiting ${formatElapsed(waitMs)} before retry ${attempt}/${maxRetries}`));
+						await sleep(waitMs);
+						continue;
+					}
+					lastError = execErr;
+					break; // Non-rate-limit failure
+				}
+			}
+
+			if (lastError) {
+				report.errors.push(String(lastError));
+				report.summary = `Claude execution failed: ${lastError}`;
+			} else {
+				// Read the agent's self-report if it wrote one
+				try {
+					const agentReport = JSON.parse(await readFile(reportPath, 'utf-8'));
+					report.blockers = agentReport.blockers ?? [];
+					report.errors = agentReport.errors ?? [];
+					report.summary = agentReport.summary ?? '';
+				} catch {
+					report.summary = 'Task completed (no agent report generated)';
+				}
+
+				// Get list of files changed
+				try {
+					const diffResult = await execaCommand('git diff --name-only HEAD', {
+						shell: true, cwd: worktreePath, timeout: 10000,
+					});
+					report.files_changed = diffResult.stdout.trim().split('\n').filter(Boolean);
 				} catch { /* ignore */ }
-				report.status = 'merge_conflict';
-				report.blockers.push(`Merge conflict on branch ${branchName}`);
-				report.errors.push(String(mergeErr));
+
+				// Commit changes in worktree
+				try {
+					await execaCommand('git add -A', { shell: true, cwd: worktreePath, timeout: 10000 });
+					const commitMsg = `forge: ${task.title} [${specTaskId ?? task.id}]`;
+					await execaCommand(`git commit -m "${commitMsg}" --allow-empty`, {
+						shell: true, cwd: worktreePath, timeout: 15000,
+					});
+				} catch {
+					// Nothing to commit
+				}
+
+				// Merge worktree branch back to main
+				try {
+					const mainBranch = await getMainBranch(cwd);
+					await execaCommand(`git checkout ${mainBranch}`, { shell: true, cwd, timeout: 10000 });
+					await execaCommand(`git merge ${branchName} --no-edit`, { shell: true, cwd, timeout: 30000 });
+					report.status = 'success';
+				} catch (mergeErr) {
+					// Merge conflict — abort and preserve branch for manual resolution
+					try {
+						await execaCommand('git merge --abort', { shell: true, cwd, timeout: 10000 });
+					} catch { /* ignore */ }
+					report.status = 'merge_conflict';
+					report.blockers.push(`Merge conflict on branch ${branchName}`);
+					report.errors.push(String(mergeErr));
+				}
 			}
 		} finally {
 			try { await unlink(tmpFile); } catch { /* ignore */ }
@@ -680,6 +738,39 @@ async function generateMudaAnalysis(
 	}
 
 	await writeText(join(reportsDir, 'muda-analysis.md'), lines.join('\n'));
+}
+
+// ─── Rate Limit Helpers ──────────────────────────────────────────
+
+function isRateLimited(output: string): boolean {
+	return /hit your limit|rate.?limit|too many requests|429|overloaded/i.test(output);
+}
+
+/** Parse reset time from "resets 7am" or fall back to exponential backoff */
+function getRateLimitWait(output: string, attempt: number): number {
+	// Try to parse "resets <time>" from Claude output
+	const resetMatch = output.match(/resets\s+(\d{1,2})(am|pm)/i);
+	if (resetMatch) {
+		const hour = parseInt(resetMatch[1], 10);
+		const isPm = resetMatch[2].toLowerCase() === 'pm';
+		const resetHour = isPm && hour !== 12 ? hour + 12 : (!isPm && hour === 12 ? 0 : hour);
+
+		const now = new Date();
+		const reset = new Date(now);
+		reset.setHours(resetHour, 0, 0, 0);
+		if (reset <= now) reset.setDate(reset.getDate() + 1);
+
+		const waitMs = reset.getTime() - now.getTime();
+		// Cap at 2 hours to avoid waiting all night on a misparse
+		return Math.min(waitMs, 2 * 60 * 60 * 1000);
+	}
+
+	// Exponential backoff: 30s, 60s, 120s, 240s, 480s
+	return Math.min(30000 * Math.pow(2, attempt - 1), 480000);
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // ─── Utilities ────────────────────────────────────────────────────

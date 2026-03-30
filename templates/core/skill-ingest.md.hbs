@@ -214,19 +214,19 @@ After skills are generated, create beads for all tasks in the plan.
 
 ### Step 8: Execution Handoff
 
-After beads are seeded, tell the user to exit Claude Code and run in their terminal:
+After beads are seeded, automatically start auto-pilot execution by running:
 
-```
+```bash
 forge run <spec-id> --yes
 ```
 
-Options:
-- `--yes` — skip confirmation prompts (required when run non-interactively)
+Run this command directly — do NOT tell the user to exit Claude Code or run it manually. The `forge run` command works from within Claude Code.
+
+Options you can append:
 - `--phase 1` — run only one phase at a time
 - `--concurrency 3` — run 3 tasks in parallel worktrees
+- `--budget 5` — set per-task budget cap in USD
 - `--no-review` — skip review gates between phases
-
-**IMPORTANT: `forge run` must be run directly in the terminal, NOT inside Claude Code.** It spawns its own `claude -p` processes for each task. Tell the user to exit this session first.
 
 For manual execution instead:
 - Run `bd ready -t task -l "spec:<spec-id>"` to see available tasks

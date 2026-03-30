@@ -74,6 +74,8 @@ program
 	.option('--budget <usd>', 'Max USD spend per task via claude -p')
 	.option('--no-review', 'Skip review gates between phases')
 	.option('--yes', 'Skip all confirmation prompts (for non-interactive use)')
+	.option('--api-key <key>', 'Anthropic API key (bypasses Claude Code subscription limits)')
+	.option('--model <model>', 'Model to use for worker agents (e.g., claude-sonnet-4-6)')
 	.action(run);
 
 program.parse();
