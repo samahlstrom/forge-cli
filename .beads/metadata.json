@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "forge_cli",
+  "project_id": "d5d5997e-bb62-4bec-b836-7b9afdf33aef"
+}
