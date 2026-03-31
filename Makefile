@@ -1,7 +1,11 @@
-.PHONY: build install release clean test vet
+.PHONY: setup build install release clean test vet
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "0.2.0")
 INSTALL_PATH ?= /opt/homebrew/bin/forge
+
+setup:
+	git config core.hooksPath .githooks
+	@echo "Git hooks configured."
 
 build:
 	go build -ldflags "-X github.com/samahlstrom/forge-cli/internal/static.Version=$(VERSION)" -o bin/forge .

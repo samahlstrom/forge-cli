@@ -1,0 +1,33 @@
+#!/bin/bash
+# Auto-increment version tag on each commit
+# Rollover: patch 0-99, minor 0-99, major increments after
+# 0.0.99 -> 0.1.0, 0.99.99 -> 1.0.0
+
+# Get the latest semver tag
+latest=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+
+if [ -z "$latest" ]; then
+  next="v0.0.1"
+else
+  version="${latest#v}"
+  major=$(echo "$version" | cut -d. -f1)
+  minor=$(echo "$version" | cut -d. -f2)
+  patch=$(echo "$version" | cut -d. -f3)
+
+  patch=$((patch + 1))
+
+  if [ "$patch" -gt 99 ]; then
+    patch=0
+    minor=$((minor + 1))
+  fi
+
+  if [ "$minor" -gt 99 ]; then
+    minor=0
+    major=$((major + 1))
+  fi
+
+  next="v${major}.${minor}.${patch}"
+fi
+
+git tag "$next"
+echo "Tagged: $next"
