@@ -26,7 +26,11 @@ emit_pause() {
   shift 5
   local ctx_files=("$@")
   local ctx_json
-  ctx_json=$(printf '%s\n' "${ctx_files[@]}" | jq -R . | jq -s .)
+  if [[ ${#ctx_files[@]} -eq 0 ]]; then
+    ctx_json='[]'
+  else
+    ctx_json=$(printf '%s\n' "${ctx_files[@]}" | jq -R . | jq -s .)
+  fi
   jq -n \
     --arg status "PAUSE" \
     --arg task "$task" \
@@ -83,7 +87,7 @@ bd_get_field() {
 
 bd_get_label() {
   local task_id="$1" label_prefix="$2"
-  bd show "$task_id" --json 2>/dev/null | jq -r "if type == \"array\" then .[0].labels[]? else .labels[]? end // empty" | grep "^${label_prefix}:" | head -1 | sed "s/^${label_prefix}://"
+  bd show "$task_id" --json 2>/dev/null | jq -r "if type == \"array\" then .[0].labels[]? else .labels[]? end // empty" | grep "^${label_prefix}:" | head -1 | sed "s/^${label_prefix}://" || true
 }
 
 # --- Stage Functions ---
@@ -105,7 +109,7 @@ stage_intake() {
 
   # Create task in bd
   local task_id
-  task_id=$(echo "$description" | bd create "$title" --stdin -l "mode:${mode},source:${source}" --json 2>/dev/null | jq -r '.id') || {
+  task_id=$(echo "$description" | bd create "$title" --body-file - -l "mode:${mode},source:${source}" --json 2>/dev/null | jq -r '.id') || {
     emit_error "intake" "Failed to create task in bd" "" ""
     exit 1
   }

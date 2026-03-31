@@ -15,12 +15,13 @@ metrics:
     target: 1.0
   - name: "test_passed"
     direction: "maximize"
+    target: 5
   - name: "build_ms"
     direction: "minimize"
   - name: "binary_bytes"
     direction: "minimize"
 
-primary: "test_pass_rate"
+primary: "test_passed"
 
 objective: |
   Improve the forge-cli codebase. Focus areas in priority order:
