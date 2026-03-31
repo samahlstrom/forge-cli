@@ -238,7 +238,7 @@ my-project/
     ├── pipeline/                       # State machine scripts
     │   ├── orchestrator.sh
     │   ├── intake.sh
-    │   ├── classify.sh
+    │   ├── classify.md
     │   ├── decompose.md
     │   ├── review-plan.md
     │   ├── execute.md

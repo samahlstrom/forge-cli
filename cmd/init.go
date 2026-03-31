@@ -602,7 +602,7 @@ func generateHarness(cwd string, detected detect.DetectedStack, answers initAnsw
 		{"core/skill-ingest.md.hbs", ".claude/skills/ingest/SKILL.md"},
 		{"core/pipeline/orchestrator.sh.hbs", ".forge/pipeline/orchestrator.sh"},
 		{"core/pipeline/intake.sh.hbs", ".forge/pipeline/intake.sh"},
-		{"core/pipeline/classify.sh.hbs", ".forge/pipeline/classify.sh"},
+		{"core/pipeline/classify.md.hbs", ".forge/pipeline/classify.md"},
 		{"core/pipeline/decompose.md.hbs", ".forge/pipeline/decompose.md"},
 		{"core/pipeline/execute.md.hbs", ".forge/pipeline/execute.md"},
 		{"core/pipeline/review-plan.md.hbs", ".forge/pipeline/review-plan.md"},

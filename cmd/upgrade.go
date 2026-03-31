@@ -163,6 +163,18 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Clean up deprecated files from previous versions
+	deprecatedFiles := []string{
+		".forge/pipeline/classify.sh", // Replaced by classify.md (LLM agent classifier)
+	}
+	for _, dep := range deprecatedFiles {
+		depPath := filepath.Join(cwd, dep)
+		if util.Exists(depPath) {
+			_ = os.Remove(depPath)
+			ui.Log.Success(fmt.Sprintf("%s %s", dep, ui.Dim("— deprecated, removed")))
+		}
+	}
+
 	_ = util.WriteHashes(cwd, newHashes)
 
 	promptedStr := ""
@@ -186,7 +198,7 @@ func findTemplatePath(relPath, preset string) string {
 		".claude/skills/deliver/SKILL.md":   "core/skill-deliver.md.hbs",
 		".forge/pipeline/orchestrator.sh":   "core/pipeline/orchestrator.sh.hbs",
 		".forge/pipeline/intake.sh":         "core/pipeline/intake.sh.hbs",
-		".forge/pipeline/classify.sh":       "core/pipeline/classify.sh.hbs",
+		".forge/pipeline/classify.md":       "core/pipeline/classify.md.hbs",
 		".forge/pipeline/decompose.md":      "core/pipeline/decompose.md.hbs",
 		".forge/pipeline/execute.md":        "core/pipeline/execute.md.hbs",
 		".forge/pipeline/verify.sh":         "core/pipeline/verify.sh.hbs",

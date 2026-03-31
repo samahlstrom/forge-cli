@@ -8,10 +8,10 @@ FORGE_DIR=".forge"
 PIPELINE_DIR="${FORGE_DIR}/pipeline"
 CONFIG_FILE="${FORGE_DIR}/forge.yaml"
 INTAKE="${PIPELINE_DIR}/intake.sh"
-CLASSIFY="${PIPELINE_DIR}/classify.sh"
 VERIFY="${PIPELINE_DIR}/verify.sh"
 DELIVER="${PIPELINE_DIR}/deliver.sh"
 PROMPTS_DIR="${PIPELINE_DIR}"
+CLASSIFY_PROMPT="${PROMPTS_DIR}/classify.md"
 REVIEW_PLAN="${PROMPTS_DIR}/review-plan.md"
 EVALUATE="${PROMPTS_DIR}/evaluate.md"
 
@@ -35,20 +35,6 @@ emit_pause() {
     --argjson context "$ctx_json" \
     --arg resume "bash ${PIPELINE_DIR}/orchestrator.sh --resume ${task_id} --stage ${resume_stage}" \
     '{status:$status, task:$task, prompt_file:$prompt_file, output_file:$output_file, context:$context, resume:$resume}'
-}
-
-emit_human_input() {
-  local question="$1" task_id="$2"
-  shift 2
-  local options=("$@")
-  local opts_json
-  opts_json=$(printf '%s\n' "${options[@]}" | jq -R . | jq -s .)
-  jq -n \
-    --arg status "HUMAN_INPUT" \
-    --arg question "$question" \
-    --argjson options "$opts_json" \
-    --arg resume "bash ${PIPELINE_DIR}/orchestrator.sh --resume ${task_id} --answer \"\${idx}\"" \
-    '{status:$status, question:$question, options:$options, resume:$resume}'
 }
 
 emit_done() {
@@ -132,39 +118,44 @@ stage_intake() {
   echo "$task_id|$quality_score|$mode"
 }
 
-stage_quality_gate() {
-  local task_id="$1" quality_score="$2"
-  local threshold
-  threshold=$(read_config "quality_threshold")
-  threshold="${threshold:-0.4}"
-
-  if (( $(echo "$quality_score < $threshold" | bc -l) )); then
-    emit_human_input \
-      "Work description scored ${quality_score} (threshold: ${threshold}). The description may be too vague. Would you like to:" \
-      "$task_id" \
-      "Continue anyway" \
-      "Provide more detail" \
-      "Cancel"
-    exit 0
-  fi
-}
-
+# Classification is now an LLM agent — no keyword matching.
+# The orchestrator PAUSEs for an LLM to read the bead and assign a tier.
 stage_classify() {
   local task_id="$1"
-  local description
-  description=$(bd_get_field "$task_id" "description")
+  local task_dir="${FORGE_DIR}/pipeline/runs/${task_id}"
+  local output_file="${task_dir}/classification.json"
+  mkdir -p "$task_dir"
 
-  local classify_result
-  classify_result=$(bash "$CLASSIFY" "$description") || {
-    emit_error "classify" "Classification failed" "" ""
+  emit_pause \
+    "classify" \
+    "$CLASSIFY_PROMPT" \
+    "$output_file" \
+    "post-classify" \
+    "$task_id"
+  exit 0
+}
+
+# Reads the classification result and labels the bead
+stage_post_classify() {
+  local task_id="$1"
+  local task_dir="${FORGE_DIR}/pipeline/runs/${task_id}"
+  local class_file="${task_dir}/classification.json"
+
+  if [[ ! -f "$class_file" ]]; then
+    emit_error "classify" "No classification file found at ${class_file}" "" ""
     exit 1
-  }
+  fi
 
-  local tier reason
-  tier=$(echo "$classify_result" | jq -r '.tier')
-  reason=$(echo "$classify_result" | jq -r '.reason')
+  local tier
+  tier=$(jq -r '.tier // "T2"' "$class_file")
 
-  # Add tier as a label
+  # Validate tier value
+  case "$tier" in
+    T1|T2|T3) ;;
+    *) tier="T2" ;; # Default to moderate if agent returned garbage
+  esac
+
+  # Label the bead
   bd update "$task_id" -l "tier:${tier}" 2>/dev/null
 
   echo "$tier"
@@ -213,10 +204,68 @@ stage_review_plan() {
     "review-plan" \
     "${PROMPTS_DIR}/review-plan.md" \
     "$output_file" \
-    "execute" \
+    "review-plan-check" \
     "$task_id" \
     "{{stackFile}}" "{{projectFile}}"
   exit 0
+}
+
+# Auto-handle plan review verdicts — no human escalation for revise/reject.
+# If the plan is bad, loop back to the architect silently.
+# Only hard-fail after max review cycles.
+stage_review_plan_check() {
+  local task_id="$1"
+  local task_dir="${FORGE_DIR}/pipeline/runs/${task_id}"
+  local review_file="${task_dir}/plan-review.json"
+
+  if [[ ! -f "$review_file" ]]; then
+    emit_error "review-plan" "No plan review file found" "" ""
+    exit 1
+  fi
+
+  local verdict
+  verdict=$(jq -r '.verdict // "reject"' "$review_file")
+
+  # Count review cycles
+  local review_count=1
+  while [[ -f "${task_dir}/plan-review-${review_count}.json" ]]; do
+    review_count=$((review_count + 1))
+  done
+
+  case "$verdict" in
+    approve)
+      echo "execute"
+      ;;
+    revise)
+      # Auto-loop: archive current review, re-run decompose
+      if [[ $review_count -ge 3 ]]; then
+        # 3 review cycles exhausted — this is a real failure
+        emit_error "review-plan" \
+          "Plan failed review ${review_count} times. Architect cannot produce an acceptable plan for this task." \
+          "$review_file" \
+          "bash ${PIPELINE_DIR}/orchestrator.sh --resume ${task_id} --stage decompose"
+        exit 1
+      fi
+      mv "$review_file" "${task_dir}/plan-review-${review_count}.json"
+      echo "re-decompose"
+      ;;
+    reject)
+      # Same as revise — try again, don't ask human
+      if [[ $review_count -ge 3 ]]; then
+        emit_error "review-plan" \
+          "Plan rejected ${review_count} times. Task description may be too ambiguous for automated decomposition." \
+          "$review_file" \
+          "bash ${PIPELINE_DIR}/orchestrator.sh --resume ${task_id} --stage decompose"
+        exit 1
+      fi
+      mv "$review_file" "${task_dir}/plan-review-${review_count}.json"
+      echo "re-decompose"
+      ;;
+    *)
+      emit_error "review-plan" "Unknown verdict: ${verdict}" "$review_file" ""
+      exit 1
+      ;;
+  esac
 }
 
 stage_execute() {
@@ -296,7 +345,7 @@ stage_evaluate_check() {
       echo "pass"
       ;;
     revise)
-      # Needs revision — go back to execute with revision brief
+      # Needs revision — go back to execute with revision brief (no human needed)
       echo "revise"
       ;;
     fail)
@@ -329,6 +378,8 @@ stage_verify() {
     mkdir -p "$task_dir"
     echo "$verify_result" > "$debug_file"
 
+    # Verification failure is a real error — pipeline stops here.
+    # The execution dispatcher should retry or the user needs to intervene.
     emit_error "verify" "Check failed: ${failed_check}" "$debug_file" \
       "bash ${PIPELINE_DIR}/orchestrator.sh --resume ${task_id} --stage verify"
     exit 1
@@ -359,6 +410,47 @@ stage_deliver() {
   local title
   title=$(bd_get_field "$task_id" "title")
 
+  # Generate run report from collected agent logs
+  local task_dir="${FORGE_DIR}/pipeline/runs/${task_id}"
+  local run_report="${task_dir}/run-report.json"
+  local agent_log="${task_dir}/agent-log.json"
+  local reports_dir="${task_dir}/reports"
+
+  # Collect all agent reports into the run report
+  local agent_reports="[]"
+  if [[ -d "$reports_dir" ]]; then
+    agent_reports=$(find "$reports_dir" -name "*.json" -exec cat {} \; | jq -s '.')
+  fi
+
+  # Collect all evaluation results
+  local eval_results="[]"
+  local eval_idx=1
+  while [[ -f "${task_dir}/evaluation-${eval_idx}.json" ]]; do
+    eval_results=$(echo "$eval_results" | jq --slurpfile e "${task_dir}/evaluation-${eval_idx}.json" '. + $e')
+    eval_idx=$((eval_idx + 1))
+  done
+
+  # Build the run report
+  jq -n \
+    --arg task_id "$task_id" \
+    --arg title "$title" \
+    --arg pr_url "$pr_url" \
+    --arg branch "$branch" \
+    --arg tier "$(bd_get_label "$task_id" "tier")" \
+    --argjson agent_reports "$agent_reports" \
+    --argjson evaluations "$eval_results" \
+    --argjson agent_log "$(cat "$agent_log" 2>/dev/null || echo '{}')" \
+    '{
+      task_id: $task_id,
+      title: $title,
+      pr_url: $pr_url,
+      branch: $branch,
+      tier: $tier,
+      agent_reports: $agent_reports,
+      evaluations: $evaluations,
+      agent_log: $agent_log
+    }' > "$run_report"
+
   # Close the task in bd
   bd close "$task_id" --reason "Delivered: PR ${pr_url}" 2>/dev/null
   emit_done "$pr_url" "$branch" "Delivered: ${title}"
@@ -368,7 +460,6 @@ stage_deliver() {
 
 RESUME_ID=""
 RESUME_STAGE=""
-ANSWER=""
 INPUT_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -377,8 +468,6 @@ while [[ $# -gt 0 ]]; do
       RESUME_ID="$2"; shift 2 ;;
     --stage)
       RESUME_STAGE="$2"; shift 2 ;;
-    --answer)
-      ANSWER="$2"; shift 2 ;;
     *)
       INPUT_ARGS+=("$1"); shift ;;
   esac
@@ -388,13 +477,35 @@ done
 if [[ -n "$RESUME_ID" && -n "$RESUME_STAGE" ]]; then
   task_id="$RESUME_ID"
   tier=$(bd_get_label "$task_id" "tier")
-  tier="${tier:-T1}"
+  tier="${tier:-T2}"
   mode=$(bd_get_label "$task_id" "mode")
   mode="${mode:-normal}"
 
   case "$RESUME_STAGE" in
+    post-classify)
+      tier=$(stage_post_classify "$task_id")
+      decompose_decision=$(stage_decompose_check "$task_id" "$tier" "$mode")
+      if [[ "$decompose_decision" == "decompose" ]]; then
+        stage_decompose "$task_id"
+      fi
+      stage_execute "$task_id"
+      ;;
+    decompose)
+      stage_decompose "$task_id"
+      ;;
     review-plan)
       stage_review_plan "$task_id"
+      ;;
+    review-plan-check)
+      decision=$(stage_review_plan_check "$task_id")
+      case "$decision" in
+        execute)
+          stage_execute "$task_id"
+          ;;
+        re-decompose)
+          stage_decompose "$task_id"
+          ;;
+      esac
       ;;
     execute)
       stage_execute "$task_id"
@@ -408,7 +519,7 @@ if [[ -n "$RESUME_ID" && -n "$RESUME_STAGE" ]]; then
     evaluate-check)
       eval_result=$(stage_evaluate_check "$task_id" "$tier")
       if [[ "$eval_result" == "revise" ]]; then
-        # Loop back to execute for revision
+        # Loop back to execute for revision — no human needed
         stage_execute "$task_id"
       else
         # Pass — proceed to deliver
@@ -426,50 +537,20 @@ if [[ -n "$RESUME_ID" && -n "$RESUME_STAGE" ]]; then
   exit 0
 fi
 
-# Handle quality gate answer
-if [[ -n "$RESUME_ID" && -n "$ANSWER" ]]; then
-  task_id="$RESUME_ID"
-  case "$ANSWER" in
-    0) ;; # Continue anyway
-    1) emit_error "quality-gate" "User chose to provide more detail" "" ""; exit 0 ;;
-    2) bd close "$task_id" --reason "Cancelled by user" 2>/dev/null; emit_error "quality-gate" "Cancelled by user" "" ""; exit 0 ;;
-  esac
-  tier=$(stage_classify "$task_id")
-  mode=$(bd_get_label "$task_id" "mode")
-  mode="${mode:-normal}"
-  decompose_decision=$(stage_decompose_check "$task_id" "$tier" "$mode")
-  if [[ "$decompose_decision" == "decompose" ]]; then
-    stage_decompose "$task_id"
-  fi
-  stage_execute "$task_id"
-  exit 0
-fi
-
 # Fresh run
 if [[ ${#INPUT_ARGS[@]} -eq 0 ]]; then
   emit_error "intake" "No work description provided" "" "forge work \"<description>\""
   exit 1
 fi
 
-# Stage: intake
+# Stage: intake (parse input, score quality, create bead)
 intake_output=$(stage_intake "${INPUT_ARGS[@]}")
 task_id=$(echo "$intake_output" | cut -d'|' -f1)
 quality_score=$(echo "$intake_output" | cut -d'|' -f2)
 mode=$(echo "$intake_output" | cut -d'|' -f3)
 
-# Stage: quality-gate
-stage_quality_gate "$task_id" "$quality_score"
+# Quality score is stored in intake.json for reference but no longer gates the pipeline.
+# The architect and evaluators handle ambiguity — not a keyword-based quality threshold.
 
-# Stage: classify
-tier=$(stage_classify "$task_id")
-
-# Stage: decompose-check
-decompose_decision=$(stage_decompose_check "$task_id" "$tier" "$mode")
-
-# Stage: decompose (if needed)
-if [[ "$decompose_decision" == "decompose" ]]; then
-  stage_decompose "$task_id"
-fi
-
-# Stage: execute
-stage_execute "$task_id"
+# Stage: classify (LLM agent assigns risk tier)
+stage_classify "$task_id"

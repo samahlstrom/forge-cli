@@ -57,7 +57,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	})
 
 	// 3. Pipeline files
-	pipelineFiles := []string{"orchestrator.sh", "intake.sh", "classify.sh", "decompose.md", "execute.md", "verify.sh", "deliver.sh"}
+	pipelineFiles := []string{"orchestrator.sh", "intake.sh", "classify.md", "decompose.md", "execute.md", "verify.sh", "deliver.sh"}
 	pipelineMissing := 0
 	for _, f := range pipelineFiles {
 		if !util.Exists(filepath.Join(cwd, ".forge", "pipeline", f)) {

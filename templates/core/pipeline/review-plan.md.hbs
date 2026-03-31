@@ -4,6 +4,17 @@ You are the **plan reviewer**. Before execution begins, you review the decomposi
 
 This is the "sprint contract negotiation" — the architect proposed what to build, and you verify the plan is sound before any code is written.
 
+## Agent Contract
+
+**You MUST follow this lifecycle. No exceptions.**
+
+1. **OPEN**: Announce: "Plan reviewer starting for task {{bead_id}}. Reviewing decomposition plan."
+2. **WORK**: Execute your review checklist below.
+3. **REPORT**: Write the plan review JSON to the output file. This is mandatory.
+4. **CLOSE**: State explicitly: "Plan review complete. Returning control to orchestrator."
+
+If you cannot complete the review (e.g., decomposition file missing), file the report with `verdict: "reject"` and explain why. Silence is not an option.
+
 ## Input
 
 **Task ID:** `{{bead_id}}`
@@ -77,13 +88,13 @@ Read the plan at: `.forge/pipeline/runs/{{bead_id}}/decomposition.json`
 
 - **approve** (composite >= 0.8 AND no dimension below 0.6): Plan is ready for execution.
 - **revise** (composite >= 0.5 OR any dimension below 0.6): Plan needs adjustment. Provide specific `revision_instructions` for the architect to fix.
-- **reject** (composite < 0.5): Plan is fundamentally flawed. The task description may need clarification. Escalate to human.
+- **reject** (composite < 0.5): Plan is fundamentally flawed. Provide detailed `revision_instructions` explaining what's wrong and what a good plan would look like.
 
 ## What Happens Next
 
 - **approve**: Pipeline proceeds to execution.
-- **revise**: The architect re-runs decomposition with `revision_instructions` as additional context. Review runs again (max 2 review cycles).
-- **reject**: Pipeline pauses for human input.
+- **revise**: The architect re-runs decomposition with `revision_instructions` as additional context. Review runs again automatically (max 3 review cycles).
+- **reject**: Same as revise — the architect gets another shot with your feedback. After 3 failed cycles, the pipeline errors out.
 
 Write the output to: `.forge/pipeline/runs/{{bead_id}}/plan-review.json`
 
