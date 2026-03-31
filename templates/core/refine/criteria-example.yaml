@@ -1,0 +1,45 @@
+# criteria.yaml — defines what "better" means
+#
+# The measure command must output JSON to stdout with metric values.
+# Example output: {"test_pass_rate": 1.0, "ns_per_op": 850, "allocs": 12}
+
+# Command that produces metrics (agent CANNOT edit this)
+measure: "go test -bench=BenchmarkRender -benchmem ./internal/render/ 2>/dev/null | go run ./scripts/bench2json.go"
+
+# Metrics to track
+metrics:
+  - name: "ns_per_op"
+    direction: "minimize"    # lower is better
+    target: 500              # stop when reached (optional)
+  - name: "allocs_per_op"
+    direction: "minimize"
+  - name: "test_pass_rate"
+    direction: "maximize"
+    target: 1.0
+
+# Which metric drives keep/discard decisions
+primary: "ns_per_op"
+
+# What to tell the agent
+objective: |
+  Optimize the render hot path. Reduce allocations.
+  Do not change the public API surface.
+
+# What files the agent can touch
+scope:
+  include:
+    - "internal/render/"
+    - "internal/util/"
+  exclude:
+    - "**/*_test.go"
+    - "criteria.yaml"
+
+# Limits
+max_iterations: 25
+budget_per_iteration: "0.50"
+idle_timeout: 600
+
+# When to stop
+stop_when:
+  all_targets_met: true
+  no_improvement_for: 5
