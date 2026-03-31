@@ -13,7 +13,6 @@ DELIVER="${PIPELINE_DIR}/deliver.sh"
 PROMPTS_DIR="${PIPELINE_DIR}"
 CLASSIFY_PROMPT="${PROMPTS_DIR}/classify.md"
 REVIEW_PLAN="${PROMPTS_DIR}/review-plan.md"
-EVALUATE="${PROMPTS_DIR}/evaluate.md"
 
 # --- Helpers ---
 
@@ -294,10 +293,10 @@ stage_execute() {
 stage_evaluate() {
   local task_id="$1" tier="$2"
   local task_dir="${FORGE_DIR}/pipeline/runs/${task_id}"
+  local reports_dir="${task_dir}/reports"
+  mkdir -p "$reports_dir"
 
   # Max evaluation iterations — capped at 3 for all tiers.
-  # Quality degrades past 3 cycles; if it's not fixed by then,
-  # the approach needs to change, not iterate further.
   local max_iterations=3
 
   # Find current iteration number
@@ -312,56 +311,148 @@ stage_evaluate() {
     exit 1
   fi
 
-  local output_file="${task_dir}/evaluation-${iteration}.json"
+  # --- Gather inputs for evaluators ---
+  local diff_file="${task_dir}/eval-${iteration}-diff.patch"
+  git diff HEAD~1 > "$diff_file" 2>/dev/null || git diff > "$diff_file" 2>/dev/null || true
 
-  emit_pause \
-    "evaluate" \
-    "${PROMPTS_DIR}/evaluate.md" \
-    "$output_file" \
-    "evaluate-check" \
-    "$task_id" \
-    "{{stackFile}}" "{{projectFile}}"
-  exit 0
-}
+  local execution_file="${task_dir}/execution.json"
+  local title
+  title=$(bd_get_field "$task_id" "title")
 
-stage_evaluate_check() {
-  local task_id="$1" tier="$2"
-  local task_dir="${FORGE_DIR}/pipeline/runs/${task_id}"
+  # --- Launch three evaluator agents in parallel (mechanical, no LLM dispatch) ---
+  local edgar_report="${reports_dir}/eval-${iteration}-edgar.json"
+  local cq_report="${reports_dir}/eval-${iteration}-code-quality.json"
+  local ua_report="${reports_dir}/eval-${iteration}-um-actually.json"
 
-  # Find the latest evaluation file
-  local latest_iteration=1
-  while [[ -f "${task_dir}/evaluation-$((latest_iteration + 1)).json" ]]; do
-    latest_iteration=$((latest_iteration + 1))
-  done
+  local edgar_pid cq_pid ua_pid
 
-  local eval_file="${task_dir}/evaluation-${latest_iteration}.json"
-  if [[ ! -f "$eval_file" ]]; then
-    emit_error "evaluate-check" "No evaluation file found" "" ""
-    exit 1
+  claude --print -p "You are Edgar. Read and follow .forge/agents/edgar.md exactly. \
+Evaluate this diff: $(cat "$diff_file"). \
+Task: ${title} (${task_id}). Tier: ${tier}. \
+Execution summary: $(cat "$execution_file" 2>/dev/null || echo 'not available'). \
+Context files: {{stackFile}}, {{projectFile}} — read them. \
+Output ONLY your JSON report (no markdown fences, no commentary). Follow the Output Format in edgar.md." \
+    > "$edgar_report" 2>/dev/null &
+  edgar_pid=$!
+
+  claude --print -p "You are the Code Quality evaluator. Read and follow .forge/agents/code-quality.md exactly. \
+Evaluate this diff: $(cat "$diff_file"). \
+Task: ${title} (${task_id}). Tier: ${tier}. \
+Execution summary: $(cat "$execution_file" 2>/dev/null || echo 'not available'). \
+Context files: {{stackFile}}, {{projectFile}} — read them. \
+Output ONLY your JSON report (no markdown fences, no commentary). Follow the Output Format in code-quality.md." \
+    > "$cq_report" 2>/dev/null &
+  cq_pid=$!
+
+  claude --print -p "You are Um-Actually. Read and follow .forge/agents/um-actually.md exactly. \
+Evaluate this diff: $(cat "$diff_file"). \
+Task: ${title} (${task_id}). Tier: ${tier}. \
+Execution summary: $(cat "$execution_file" 2>/dev/null || echo 'not available'). \
+Context files: {{stackFile}}, {{projectFile}} — read them. \
+Output ONLY your JSON report (no markdown fences, no commentary). Follow the Output Format in um-actually.md." \
+    > "$ua_report" 2>/dev/null &
+  ua_pid=$!
+
+  # Wait for all three
+  local edgar_exit=0 cq_exit=0 ua_exit=0
+  wait $edgar_pid || edgar_exit=$?
+  wait $cq_pid || cq_exit=$?
+  wait $ua_pid || ua_exit=$?
+
+  # --- Extract scores (penalty 0.5 if agent failed or produced invalid JSON) ---
+  local edgar_score cq_score ua_score edgar_verdict cq_verdict ua_verdict
+
+  edgar_score=$(jq -r '.scores.weighted_total // 0.5' "$edgar_report" 2>/dev/null || echo "0.5")
+  cq_score=$(jq -r '.scores.weighted_total // 0.5' "$cq_report" 2>/dev/null || echo "0.5")
+  ua_score=$(jq -r '.scores.weighted_total // 0.5' "$ua_report" 2>/dev/null || echo "0.5")
+
+  edgar_verdict=$(jq -r '.verdict // "conditional"' "$edgar_report" 2>/dev/null || echo "conditional")
+  cq_verdict=$(jq -r '.verdict // "conditional"' "$cq_report" 2>/dev/null || echo "conditional")
+  ua_verdict=$(jq -r '.verdict // "conditional"' "$ua_report" 2>/dev/null || echo "conditional")
+
+  # --- Aggregate scores ---
+  local composite
+  composite=$(echo "$edgar_score $cq_score $ua_score" | awk '{printf "%.4f", ($1 * 0.35) + ($2 * 0.35) + ($3 * 0.30)}')
+
+  # --- Determine verdict ---
+  local verdict="pass"
+  local any_fail=false
+  [[ "$edgar_verdict" == "fail" || "$cq_verdict" == "fail" || "$ua_verdict" == "fail" ]] && any_fail=true
+
+  if [[ "$any_fail" == "true" && $iteration -ge $max_iterations ]]; then
+    verdict="fail"
+  elif (( $(echo "$composite < 0.5" | bc -l) )); then
+    if [[ $iteration -ge $max_iterations ]]; then
+      verdict="fail"
+    else
+      verdict="revise"
+    fi
+  elif (( $(echo "$composite < 0.7" | bc -l) )) || [[ "$any_fail" == "true" ]]; then
+    verdict="revise"
   fi
 
-  local verdict
-  verdict=$(jq -r '.verdict // "fail"' "$eval_file")
+  # --- Build revision brief if needed ---
+  local revision_brief="null"
+  if [[ "$verdict" == "revise" ]]; then
+    local critical_findings
+    critical_findings=$(jq -s '[.[] | .findings[]? | select(.severity == "critical" or .severity == "high")] | length' \
+      "$edgar_report" "$cq_report" "$ua_report" 2>/dev/null || echo "0")
 
-  case "$verdict" in
-    pass)
-      # Evaluation passed — proceed to delivery
-      echo "pass"
-      ;;
-    revise)
-      # Needs revision — go back to execute with revision brief (no human needed)
-      echo "revise"
-      ;;
-    fail)
-      emit_error "evaluate" "Evaluation failed" "$eval_file" \
-        "bash ${PIPELINE_DIR}/orchestrator.sh --resume ${task_id} --stage execute"
-      exit 1
-      ;;
-    *)
-      emit_error "evaluate-check" "Unknown verdict: ${verdict}" "$eval_file" ""
-      exit 1
-      ;;
-  esac
+    revision_brief=$(jq -n \
+      --arg edgar_score "$edgar_score" \
+      --arg cq_score "$cq_score" \
+      --arg ua_score "$ua_score" \
+      --arg composite "$composite" \
+      --arg iteration "$iteration" \
+      --arg max "$max_iterations" \
+      --argjson edgar_findings "$(jq '[.findings[]? | select(.severity == "critical" or .severity == "high")]' "$edgar_report" 2>/dev/null || echo '[]')" \
+      --argjson cq_findings "$(jq '[.findings[]? | select(.severity == "critical" or .severity == "high")]' "$cq_report" 2>/dev/null || echo '[]')" \
+      --argjson ua_findings "$(jq '[.findings[]? | select(.severity == "critical" or .severity == "high")]' "$ua_report" 2>/dev/null || echo '[]')" \
+      '{
+        iteration: ($iteration | tonumber),
+        max_iterations: ($max | tonumber),
+        scores: { edgar: ($edgar_score | tonumber), code_quality: ($cq_score | tonumber), um_actually: ($ua_score | tonumber), composite: ($composite | tonumber) },
+        critical_findings: ($edgar_findings + $cq_findings + $ua_findings)
+      }' | jq -Rs .)
+  fi
+
+  # --- Count findings ---
+  local critical_count high_count
+  critical_count=$(jq -s '[.[] | .findings[]? | select(.severity == "critical")] | length' \
+    "$edgar_report" "$cq_report" "$ua_report" 2>/dev/null || echo "0")
+  high_count=$(jq -s '[.[] | .findings[]? | select(.severity == "high")] | length' \
+    "$edgar_report" "$cq_report" "$ua_report" 2>/dev/null || echo "0")
+
+  # --- Write evaluation output ---
+  local output_file="${task_dir}/evaluation-${iteration}.json"
+  jq -n \
+    --arg task_id "$task_id" \
+    --argjson iteration "$iteration" \
+    --argjson edgar "$(cat "$edgar_report" 2>/dev/null || echo '{"scores":{},"findings":[],"verdict":"conditional"}')" \
+    --argjson code_quality "$(cat "$cq_report" 2>/dev/null || echo '{"scores":{},"findings":[],"verdict":"conditional"}')" \
+    --argjson um_actually "$(cat "$ua_report" 2>/dev/null || echo '{"scores":{},"findings":[],"verdict":"conditional"}')" \
+    --arg composite "$composite" \
+    --arg verdict "$verdict" \
+    --argjson revision_brief "$revision_brief" \
+    --argjson critical "$critical_count" \
+    --argjson high "$high_count" \
+    '{
+      task_id: $task_id,
+      iteration: $iteration,
+      evaluators: {
+        edgar: ($edgar | {scores, findings, verdict, reported: true}),
+        code_quality: ($code_quality | {scores, findings, verdict, reported: true}),
+        um_actually: ($um_actually | {scores, findings, verdict, reported: true})
+      },
+      composite_score: ($composite | tonumber),
+      verdict: $verdict,
+      revision_brief: $revision_brief,
+      critical_findings_count: $critical,
+      high_findings_count: $high
+    }' > "$output_file"
+
+  # --- Return verdict (no PAUSE, fully mechanical) ---
+  echo "$verdict"
 }
 
 stage_verify() {
@@ -389,8 +480,30 @@ stage_verify() {
     exit 1
   fi
 
-  # Mechanical checks passed — now run tri-agent evaluation
-  stage_evaluate "$task_id" "$tier"
+  # Mechanical checks passed — now run tri-agent evaluation (fully mechanical, no PAUSE)
+  local eval_verdict
+  eval_verdict=$(stage_evaluate "$task_id" "$tier")
+
+  case "$eval_verdict" in
+    pass)
+      stage_deliver "$task_id"
+      ;;
+    revise)
+      # Loop back to execute for revision
+      stage_execute "$task_id"
+      ;;
+    fail)
+      local task_dir="${FORGE_DIR}/pipeline/runs/${task_id}"
+      local latest=1
+      while [[ -f "${task_dir}/evaluation-$((latest + 1)).json" ]]; do
+        latest=$((latest + 1))
+      done
+      emit_error "evaluate" "Evaluation failed after ${latest} iterations" \
+        "${task_dir}/evaluation-${latest}.json" \
+        "bash ${PIPELINE_DIR}/orchestrator.sh --resume ${task_id} --stage execute"
+      exit 1
+      ;;
+  esac
 }
 
 stage_deliver() {
@@ -518,17 +631,18 @@ if [[ -n "$RESUME_ID" && -n "$RESUME_STAGE" ]]; then
       stage_verify "$task_id" "$tier"
       ;;
     evaluate)
-      stage_evaluate "$task_id" "$tier"
-      ;;
-    evaluate-check)
-      eval_result=$(stage_evaluate_check "$task_id" "$tier")
-      if [[ "$eval_result" == "revise" ]]; then
-        # Loop back to execute for revision — no human needed
-        stage_execute "$task_id"
-      else
-        # Pass — proceed to deliver
-        stage_deliver "$task_id"
-      fi
+      # Evaluate is fully mechanical — runs 3 agents in parallel, aggregates, returns verdict
+      eval_verdict=$(stage_evaluate "$task_id" "$tier")
+      case "$eval_verdict" in
+        pass) stage_deliver "$task_id" ;;
+        revise) stage_execute "$task_id" ;;
+        fail)
+          local task_dir="${FORGE_DIR}/pipeline/runs/${task_id}"
+          emit_error "evaluate" "Evaluation failed" "${task_dir}/" \
+            "bash ${PIPELINE_DIR}/orchestrator.sh --resume ${task_id} --stage execute"
+          exit 1
+          ;;
+      esac
       ;;
     deliver)
       stage_deliver "$task_id"

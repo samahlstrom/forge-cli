@@ -57,7 +57,7 @@ The orchestrator needs LLM work. Read `task` to determine which kind:
 
 **For execute pauses**: Dispatch to a subagent. This is the execution dispatcher — it launches further subagents for each subtask per wave. It follows `.forge/pipeline/execute.md` and the Agent Contract. **It must collect reports from every subagent it launches and write the agent-log.json.**
 
-**For evaluate pauses**: Dispatch to a subagent. This is the evaluation dispatcher — it launches the three evaluators (Edgar, Code Quality, Um-Actually) in parallel. It follows `.forge/pipeline/evaluate.md` and the Agent Contract. **It must collect reports from every evaluator.**
+Note: The evaluate stage runs mechanically inside the orchestrator (three `claude` processes in parallel). There is no evaluate PAUSE — the orchestrator handles it automatically.
 
 ### DONE
 Pipeline complete.
