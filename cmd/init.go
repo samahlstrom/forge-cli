@@ -288,9 +288,9 @@ func runInit(_ *cobra.Command, _ []string) error {
 
 	ui.Log.Warn(ui.Yellow("If you ran this inside Claude Code, restart the session so it picks up the new settings, skills, and hooks."))
 	if specId != "" {
-		ui.Outro(ui.Green("Harness ready!") + ui.Dim(fmt.Sprintf(" Run /ingest %s in Claude Code to start.", specId)))
+		ui.Outro(ui.Green("Harness ready!") + ui.Dim(fmt.Sprintf(` Tell your agent: /ingest %s`, specId)))
 	} else {
-		ui.Outro(ui.Green("Harness ready!") + ui.Dim(" Run /forge in Claude Code to start."))
+		ui.Outro(ui.Green("Harness ready!") + ui.Dim(` Tell your agent: /forge "what you want to build"`))
 	}
 	return nil
 }
@@ -520,8 +520,11 @@ func askInitQuestions(detected detect.DetectedStack, analysis *specAnalysis) ini
 		domainRules = analysis.DomainRules
 	} else if autoMode || initYes {
 		// Auto-mode: infer project context from codebase using Claude
+		spinner := ui.NewSpinner()
+		spinner.Start("Analyzing codebase with Claude...")
 		inferred := inferProjectContext(mustCwd())
 		if inferred != nil {
+			spinner.Stop("Project context inferred")
 			projectDescription = inferred.Description
 			projectType = inferred.ProjectType
 			keyModules = inferred.Modules
@@ -544,6 +547,8 @@ func askInitQuestions(detected detect.DetectedStack, analysis *specAnalysis) ini
 				lines = append(lines, fmt.Sprintf("Modules:      %s", ui.Cyan(strings.Join(keyModules, ", "))))
 			}
 			ui.Note(strings.Join(lines, "\n"), "Inferred project context")
+		} else {
+			spinner.Stop("Could not infer project context")
 		}
 	} else {
 		// Interactive: ask the user
@@ -924,14 +929,22 @@ func displayInitResults(files []generatedFile, specId string) {
 	ui.Note(strings.Join(lines, "\n"), fmt.Sprintf("Generated (%d files)", len(files)))
 
 	ui.Log.Step("Next steps:")
-	ui.Log.Message(fmt.Sprintf("  1. Review %s — verify your project context", ui.Cyan(".forge/context/project.md")))
-	ui.Log.Message(fmt.Sprintf("  2. %s", ui.Dim("git add forge.yaml CLAUDE.md .claude .forge")))
-	ui.Log.Message(fmt.Sprintf("  3. %s", ui.Dim(`git commit -m "forge: initialize agent harness"`)))
+	ui.Log.Message("")
+	ui.Log.Message(fmt.Sprintf("  %s Commit the harness:", ui.Bold("1.")))
+	ui.Log.Message(fmt.Sprintf("     %s", ui.Dim("git add forge.yaml CLAUDE.md .claude .forge .beads")))
+	ui.Log.Message(fmt.Sprintf("     %s", ui.Dim(`git commit -m "forge: initialize agent harness"`)))
+	ui.Log.Message("")
+	ui.Log.Message(fmt.Sprintf("  %s Open Claude Code and tell your agent what to build:", ui.Bold("2.")))
 	if specId != "" {
-		ui.Log.Message(fmt.Sprintf("  4. Open Claude Code → %s", ui.Cyan(fmt.Sprintf("/ingest %s", specId))))
+		ui.Log.Message(fmt.Sprintf("     %s  — decompose the spec into tasks", ui.Cyan(fmt.Sprintf("/ingest %s", specId))))
+		ui.Log.Message(fmt.Sprintf("     %s   — then start building", ui.Cyan(`/forge "first task from the plan"`)))
 	} else {
-		ui.Log.Message(fmt.Sprintf("  4. Open Claude Code → %s", ui.Cyan(`/forge "your first task"`)))
+		ui.Log.Message(fmt.Sprintf("     %s  — full pipeline", ui.Cyan(`/forge "add user authentication"`)))
+		ui.Log.Message(fmt.Sprintf("     %s         — small fix", ui.Cyan(`/forge --quick "fix typo"`)))
 	}
+	ui.Log.Message("")
+	ui.Log.Message(fmt.Sprintf("  %s", ui.Dim("Your agent handles everything from there — planning, coding, testing, and PR creation.")))
+	ui.Log.Message(fmt.Sprintf("  %s", ui.Dim("Review .forge/context/project.md if you want to add domain knowledge.")))
 	ui.Log.Message("")
 	ui.Log.Message(fmt.Sprintf("  %s", ui.Dim("Optional:")))
 	ui.Log.Message(fmt.Sprintf("    %s   — HIPAA security checks", ui.Dim("forge add compliance-hipaa")))
