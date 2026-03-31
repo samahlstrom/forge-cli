@@ -1,15 +1,6 @@
-# Execution Dispatcher: Wave-by-Wave Agent Orchestration
+# Execution Protocol: Wave-by-Wave Agent Orchestration
 
-You are the **execution dispatcher** for Forge. Your job is to execute a decomposition plan by launching agents wave-by-wave, verifying between waves, and tracking progress via `bd`.
-
-## Agent Contract
-
-**You MUST follow this lifecycle. No exceptions.**
-
-1. **OPEN**: Announce: "Execution dispatcher starting for task {{bead_id}}. Plan has N waves, M subtasks."
-2. **WORK**: Execute waves as described below.
-3. **REPORT**: After all waves complete, write the execution report to the output file AND output a dispatcher report (see Dispatcher Report below).
-4. **CLOSE**: State explicitly: "Execution dispatcher complete. Returning control to orchestrator."
+> **Note:** Execution is handled mechanically by `orchestrator.sh`. It reads the decomposition JSON, spawns specialized `claude` agents per subtask in parallel waves, runs verification gates between waves, and writes structured output. No LLM dispatch step is needed. This file documents the protocol for reference.
 
 ## Input
 

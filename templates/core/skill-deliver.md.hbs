@@ -55,9 +55,7 @@ The orchestrator needs LLM work. Read `task` to determine which kind:
 
 **For review-plan pauses**: Dispatch to a subagent. The subagent reads `.forge/pipeline/review-plan.md` and follows the Agent Contract. If the verdict is "revise" or "reject", the orchestrator will automatically loop back to the architect — you do not intervene.
 
-**For execute pauses**: Dispatch to a subagent. This is the execution dispatcher — it launches further subagents for each subtask per wave. It follows `.forge/pipeline/execute.md` and the Agent Contract. **It must collect reports from every subagent it launches and write the agent-log.json.**
-
-Note: The evaluate stage runs mechanically inside the orchestrator (three `claude` processes in parallel). There is no evaluate PAUSE — the orchestrator handles it automatically.
+Note: The execute and evaluate stages run mechanically inside the orchestrator. There are no PAUSE steps for these — the orchestrator spawns specialized `claude` agents directly based on the decomposition plan (execute) and evaluator roster (evaluate). The only PAUSE stages are classify, decompose, and review-plan.
 
 ### DONE
 Pipeline complete.

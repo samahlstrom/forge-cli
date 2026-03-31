@@ -274,20 +274,225 @@ stage_review_plan_check() {
 stage_execute() {
   local task_id="$1"
   local task_dir="${FORGE_DIR}/pipeline/runs/${task_id}"
+  local reports_dir="${task_dir}/reports"
   local output_file="${task_dir}/execution.json"
-  mkdir -p "$task_dir"
+  local decomp_file="${task_dir}/decomposition.json"
+  mkdir -p "$reports_dir"
 
   # Ensure task is claimed/in-progress
   bd update "$task_id" --claim 2>/dev/null
 
-  emit_pause \
-    "execute" \
-    "${PROMPTS_DIR}/execute.md" \
-    "$output_file" \
-    "verify" \
-    "$task_id" \
-    "{{stackFile}}" "{{projectFile}}"
-  exit 0
+  if [[ ! -f "$decomp_file" ]]; then
+    emit_error "execute" "No decomposition file found at ${decomp_file}" "" \
+      "bash ${PIPELINE_DIR}/orchestrator.sh --resume ${task_id} --stage decompose"
+    exit 1
+  fi
+
+  local title
+  title=$(bd_get_field "$task_id" "title")
+
+  # --- Read the decomposition plan ---
+  local wave_count subtask_count
+  wave_count=$(jq '.waves | length' "$decomp_file")
+  subtask_count=$(jq '.subtasks | length' "$decomp_file")
+
+  # --- Gather revision context if this is a re-execution ---
+  local revision_context=""
+  local latest_eval="${task_dir}/evaluation-1.json"
+  local eval_idx=1
+  while [[ -f "${task_dir}/evaluation-${eval_idx}.json" ]]; do
+    latest_eval="${task_dir}/evaluation-${eval_idx}.json"
+    eval_idx=$((eval_idx + 1))
+  done
+  if [[ -f "$latest_eval" ]]; then
+    revision_context="REVISION MODE: Previous evaluation found issues. Read ${latest_eval} for details. Focus on critical/high findings. Do NOT re-implement things that already passed."
+  fi
+
+  # --- Execute wave by wave ---
+  local waves_executed=0
+  local all_completed=()
+  local all_deferred=()
+  local all_files_modified=()
+  local agent_reports="[]"
+
+  for (( w=1; w<=wave_count; w++ )); do
+    # Get subtask IDs for this wave
+    local wave_subtask_ids
+    wave_subtask_ids=$(jq -r ".waves[$((w-1))].subtasks[]" "$decomp_file")
+
+    local pids=()
+    local subtask_ids=()
+
+    # Launch all subtasks in this wave in parallel
+    while IFS= read -r st_id; do
+      [[ -z "$st_id" ]] && continue
+
+      local st_title st_agent st_instructions st_verification st_files
+      st_title=$(jq -r ".subtasks[] | select(.id == \"${st_id}\") | .title" "$decomp_file")
+      st_agent=$(jq -r ".subtasks[] | select(.id == \"${st_id}\") | .agent" "$decomp_file")
+      st_instructions=$(jq -r ".subtasks[] | select(.id == \"${st_id}\") | .instructions" "$decomp_file")
+      st_verification=$(jq -r ".subtasks[] | select(.id == \"${st_id}\") | .verification" "$decomp_file")
+      st_files=$(jq -r ".subtasks[] | select(.id == \"${st_id}\") | .files[]" "$decomp_file" | tr '\n' ', ' | sed 's/,$//')
+
+      local agent_file=".forge/agents/${st_agent}.md"
+      local agent_instructions=""
+      if [[ -f "$agent_file" ]]; then
+        agent_instructions="Read and follow your agent instructions at ${agent_file} — especially the Agent Contract."
+      fi
+
+      local report_file="${reports_dir}/${st_id}.json"
+
+      # Build the prompt for this subtask agent
+      local agent_prompt="You are a ${st_agent} agent. ${agent_instructions}
+
+Task: ${title}
+Subtask: ${st_title} (${st_id})
+
+Instructions:
+${st_instructions}
+
+Files to modify: ${st_files}
+Only modify these files. Do not touch other files.
+
+Verification: ${st_verification}
+
+Project context files: {{stackFile}}, {{projectFile}} — read them for conventions.
+
+${revision_context}
+
+After completing your work, write your structured JSON report to: ${report_file}
+The report must follow the format in your agent .md file.
+If you encounter an error you cannot resolve, write your report with status: blocked."
+
+      claude --print -p "$agent_prompt" > "${reports_dir}/${st_id}-stdout.log" 2>&1 &
+      pids+=($!)
+      subtask_ids+=("$st_id")
+
+    done <<< "$wave_subtask_ids"
+
+    # Wait for all subtasks in this wave
+    local wave_failures=()
+    for i in "${!pids[@]}"; do
+      local exit_code=0
+      wait "${pids[$i]}" || exit_code=$?
+      local st_id="${subtask_ids[$i]}"
+      local report_file="${reports_dir}/${st_id}.json"
+
+      if [[ $exit_code -ne 0 ]] || [[ ! -f "$report_file" ]]; then
+        # Agent failed or didn't produce a report — retry once
+        local st_agent st_title
+        st_agent=$(jq -r ".subtasks[] | select(.id == \"${st_id}\") | .agent" "$decomp_file")
+        st_title=$(jq -r ".subtasks[] | select(.id == \"${st_id}\") | .title" "$decomp_file")
+
+        local retry_context="RETRY: Your previous attempt failed (exit code: ${exit_code}). "
+        if [[ -f "${reports_dir}/${st_id}-stdout.log" ]]; then
+          retry_context+="Previous output: $(tail -50 "${reports_dir}/${st_id}-stdout.log")"
+        fi
+
+        local retry_exit=0
+        claude --print -p "${retry_context} Try again. Write your JSON report to ${report_file}." \
+          > "${reports_dir}/${st_id}-retry-stdout.log" 2>&1 || retry_exit=$?
+
+        if [[ $retry_exit -ne 0 ]] || [[ ! -f "$report_file" ]]; then
+          wave_failures+=("$st_id")
+          # Write a failure report
+          jq -n --arg id "$st_id" --arg agent "$st_agent" \
+            '{subtask_id:$id, agent:$agent, status:"failed", what_i_did:"Agent failed after retry", files_modified:[], decisions:[], issues_encountered:["Agent process failed"]}' \
+            > "$report_file"
+        fi
+      fi
+
+      # Collect into agent reports
+      if [[ -f "$report_file" ]]; then
+        agent_reports=$(echo "$agent_reports" | jq --slurpfile r "$report_file" '. + $r')
+        local status
+        status=$(jq -r '.status // "unknown"' "$report_file" 2>/dev/null)
+        if [[ "$status" == "complete" ]]; then
+          all_completed+=("$st_id")
+        else
+          all_deferred+=("$st_id")
+        fi
+        # Collect modified files
+        local modified
+        modified=$(jq -r '.files_modified[]? // empty' "$report_file" 2>/dev/null)
+        while IFS= read -r f; do
+          [[ -n "$f" ]] && all_files_modified+=("$f")
+        done <<< "$modified"
+      fi
+    done
+
+    waves_executed=$w
+
+    # --- Post-wave verification gate ---
+    local typecheck_exit=0
+    eval "{{commands.typecheck}}" >/dev/null 2>&1 || typecheck_exit=$?
+
+    if [[ $typecheck_exit -ne 0 ]]; then
+      # Typecheck failed after this wave — revert failed subtasks' files
+      for fail_id in "${wave_failures[@]}"; do
+        local fail_files
+        fail_files=$(jq -r ".subtasks[] | select(.id == \"${fail_id}\") | .files[]" "$decomp_file")
+        while IFS= read -r f; do
+          [[ -n "$f" ]] && git checkout -- "$f" 2>/dev/null || true
+        done <<< "$fail_files"
+      done
+    fi
+
+    # Check if wave gate requires tests too
+    local wave_gate
+    wave_gate=$(jq -r ".waves[$((w-1))].gate // \"typecheck\"" "$decomp_file")
+    if [[ "$wave_gate" == *"test"* ]]; then
+      eval "{{commands.test}}" >/dev/null 2>&1 || true
+    fi
+  done
+
+  # --- Final verification ---
+  local tc_pass="failed" lint_pass="failed" test_pass="failed"
+  eval "{{commands.typecheck}}" >/dev/null 2>&1 && tc_pass="passed"
+  eval "{{commands.lint}}" >/dev/null 2>&1 && lint_pass="passed"
+  eval "{{commands.test}}" >/dev/null 2>&1 && test_pass="passed"
+
+  # --- Deduplicate files ---
+  local unique_files
+  unique_files=$(printf '%s\n' "${all_files_modified[@]}" | sort -u | jq -R . | jq -s .)
+
+  # --- Write execution.json ---
+  local completed_json deferred_json
+  completed_json=$(printf '%s\n' "${all_completed[@]}" | jq -R . | jq -s '.')
+  deferred_json=$(printf '%s\n' "${all_deferred[@]}" | jq -R . | jq -s '.')
+
+  jq -n \
+    --arg status "complete" \
+    --argjson waves "$waves_executed" \
+    --argjson completed "$completed_json" \
+    --argjson deferred "$deferred_json" \
+    --argjson files "$unique_files" \
+    --arg typecheck "$tc_pass" \
+    --arg lint "$lint_pass" \
+    --arg test "$test_pass" \
+    '{
+      status: $status,
+      waves_executed: $waves,
+      subtasks_completed: $completed,
+      subtasks_deferred: $deferred,
+      files_modified: $files,
+      verification: { typecheck: $typecheck, lint: $lint, test: $test }
+    }' > "$output_file"
+
+  # --- Write agent-log.json ---
+  jq -n \
+    --arg dispatcher "execute" \
+    --arg task_id "$task_id" \
+    --arg status "complete" \
+    --argjson waves "$waves_executed" \
+    --argjson agent_reports "$agent_reports" \
+    '{
+      dispatcher: $dispatcher,
+      task_id: $task_id,
+      status: $status,
+      waves_executed: $waves,
+      agent_reports: $agent_reports
+    }' > "${task_dir}/agent-log.json"
 }
 
 stage_evaluate() {
@@ -606,6 +811,7 @@ if [[ -n "$RESUME_ID" && -n "$RESUME_STAGE" ]]; then
         stage_decompose "$task_id"
       fi
       stage_execute "$task_id"
+      stage_verify "$task_id" "$tier"
       ;;
     decompose)
       stage_decompose "$task_id"
@@ -618,6 +824,7 @@ if [[ -n "$RESUME_ID" && -n "$RESUME_STAGE" ]]; then
       case "$decision" in
         execute)
           stage_execute "$task_id"
+          stage_verify "$task_id" "$tier"
           ;;
         re-decompose)
           stage_decompose "$task_id"
@@ -625,7 +832,10 @@ if [[ -n "$RESUME_ID" && -n "$RESUME_STAGE" ]]; then
       esac
       ;;
     execute)
+      # Execute is mechanical — spawns specialized agents per decomposition plan
       stage_execute "$task_id"
+      # Falls through to verify → evaluate → deliver (all mechanical)
+      stage_verify "$task_id" "$tier"
       ;;
     verify)
       stage_verify "$task_id" "$tier"
