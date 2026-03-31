@@ -14,9 +14,8 @@ type Criteria struct {
 	Objective string  `yaml:"objective"`
 	Scope    Scope    `yaml:"scope"`
 
-	MaxIterations      int    `yaml:"max_iterations"`
-	BudgetPerIteration string `yaml:"budget_per_iteration"`
-	IdleTimeout        int    `yaml:"idle_timeout"` // seconds
+	MaxIterations int `yaml:"max_iterations"`
+	IdleTimeout   int `yaml:"idle_timeout"` // seconds
 
 	StopWhen StopConditions `yaml:"stop_when"`
 }

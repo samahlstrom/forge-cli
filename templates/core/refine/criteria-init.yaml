@@ -28,7 +28,6 @@ metrics:
     target: 1.0
 
 max_iterations: 25
-budget_per_iteration: "1.00"
 idle_timeout: 300
 
 scope:

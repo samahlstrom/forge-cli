@@ -20,7 +20,6 @@ import (
 
 var (
 	refineMaxIter    int
-	refineBudget     string
 	refineAPIKey     string
 	refineModel      string
 	refineIdleTimeout int
@@ -39,7 +38,6 @@ Each iteration: agent makes a change → measure → keep if improved, discard i
 		RunE: runRefine,
 	}
 	refineCmd.Flags().IntVar(&refineMaxIter, "max-iterations", 0, "Override max iterations from criteria")
-	refineCmd.Flags().StringVar(&refineBudget, "budget", "", "Override USD budget per iteration")
 	refineCmd.Flags().StringVar(&refineAPIKey, "api-key", "", "Anthropic API key")
 	refineCmd.Flags().StringVar(&refineModel, "model", "claude-sonnet-4-6", "Model for the agent")
 	refineCmd.Flags().IntVar(&refineIdleTimeout, "idle-timeout", 0, "Override idle timeout (seconds)")
@@ -61,9 +59,6 @@ func runRefine(cmd *cobra.Command, args []string) error {
 	// Apply flag overrides
 	if refineMaxIter > 0 {
 		criteria.MaxIterations = refineMaxIter
-	}
-	if refineBudget != "" {
-		criteria.BudgetPerIteration = refineBudget
 	}
 	if refineIdleTimeout > 0 {
 		criteria.IdleTimeout = refineIdleTimeout
@@ -205,9 +200,6 @@ func runRefine(cmd *cobra.Command, args []string) error {
 
 		// Run agent
 		claudeArgs := []string{"claude", "-p", "--dangerously-skip-permissions", "--output-format", "json"}
-		if criteria.BudgetPerIteration != "" {
-			claudeArgs = append(claudeArgs, "--max-budget-usd", criteria.BudgetPerIteration)
-		}
 		if model != "" {
 			claudeArgs = append(claudeArgs, "--model", model)
 		}

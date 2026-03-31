@@ -30,7 +30,6 @@ var (
 	runDryRun     bool
 	runPhase      string
 	runConcurrency int
-	runBudget     string
 	runNoReview   bool
 	runYes        bool
 	runAPIKey     string
@@ -48,7 +47,6 @@ func init() {
 	runCmd.Flags().BoolVar(&runDryRun, "dry-run", false, "Show execution plan without running")
 	runCmd.Flags().StringVar(&runPhase, "phase", "", "Only execute tasks in a specific phase")
 	runCmd.Flags().IntVar(&runConcurrency, "concurrency", 1, "Max parallel tasks")
-	runCmd.Flags().StringVar(&runBudget, "budget", "", "Max USD spend per task via claude -p")
 	runCmd.Flags().BoolVar(&runNoReview, "no-review", false, "Skip review gates between phases")
 	runCmd.Flags().BoolVar(&runYes, "yes", false, "Skip all confirmation prompts (for non-interactive use)")
 	runCmd.Flags().StringVar(&runAPIKey, "api-key", "", "Anthropic API key (bypasses Claude Code subscription limits)")
@@ -411,7 +409,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 			wg.Add(1)
 			go func(idx int, t bd.Issue) {
 				defer wg.Done()
-				report, execErr := executeTaskInWorktree(t, specID, cwd, runBudget, apiKey, model, idleTimeoutDuration, cb, mlock)
+				report, execErr := executeTaskInWorktree(t, specID, cwd, apiKey, model, idleTimeoutDuration, cb, mlock)
 				results[idx] = taskResult{report: report, err: execErr, task: t}
 			}(i, task)
 		}
@@ -539,7 +537,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 func executeTaskInWorktree(
 	task bd.Issue,
-	specID, cwd, budget, apiKey, model string,
+	specID, cwd, apiKey, model string,
 	idleTimeout time.Duration,
 	cb *circuitBreakerState,
 	mlock *mergeMutex,
@@ -634,9 +632,6 @@ func executeTaskInWorktree(
 
 	// Build claude args
 	claudeArgs := []string{"claude", "-p", "--dangerously-skip-permissions", "--output-format", "json"}
-	if budget != "" {
-		claudeArgs = append(claudeArgs, "--max-budget-usd", budget)
-	}
 	if model != "" {
 		claudeArgs = append(claudeArgs, "--model", model)
 	}
