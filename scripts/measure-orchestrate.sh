@@ -9,10 +9,13 @@ mkdir -p "$WORK_DIR"
 trap "rm -rf $WORK_DIR" EXIT
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-FORGE_BIN="${SCRIPT_DIR}/../forge-test-bin"
-if [ ! -x "$FORGE_BIN" ]; then
+REPO_DIR="${SCRIPT_DIR}/.."
+
+# Build from current source so we test the latest code
+FORGE_BIN="${REPO_DIR}/.forge-measure-bin"
+go build -o "$FORGE_BIN" "$REPO_DIR" 2>/dev/null || {
   FORGE_BIN=$(which forge 2>/dev/null || echo "forge")
-fi
+}
 
 cd "$WORK_DIR"
 
@@ -200,7 +203,7 @@ fi
 
 # Score: 9 stages
 total=$((intake_ok + classify_ok + decompose_ok + review_ok + review_check_ok + execute_ok + verify_ok + evaluate_ok + eval_check_ok))
-score=$(echo "scale=4; $total / 9" | bc)
+score=$(printf "%.4f" "$(echo "scale=4; $total / 9" | bc)")
 
 cat <<EOJSON
 {"intake_ok": ${intake_ok}, "classify_ok": ${classify_ok}, "decompose_ok": ${decompose_ok}, "review_ok": ${review_ok}, "review_check_ok": ${review_check_ok}, "execute_ok": ${execute_ok}, "verify_ok": ${verify_ok}, "evaluate_ok": ${evaluate_ok}, "eval_check_ok": ${eval_check_ok}, "pipeline_score": ${score}, "stages_passed": ${total}}
