@@ -18,13 +18,20 @@ fi
 # --- Read task state from bd ---
 
 TASK_JSON=$(bd show "$TASK_ID" --json 2>/dev/null)
-TITLE=$(echo "$TASK_JSON" | jq -r '.title // "untitled"')
-DESCRIPTION=$(echo "$TASK_JSON" | jq -r '.description // ""')
+
+# bd show --json may return an array [{...}] or object {...} — normalize to object
+bd_field() {
+  echo "$TASK_JSON" | jq -r "if type == \"array\" then .[0].${1} else .${1} end // empty"
+}
+
+TITLE=$(bd_field "title")
+TITLE="${TITLE:-untitled}"
+DESCRIPTION=$(bd_field "description")
 
 # Extract tier and mode from labels
-TIER=$(echo "$TASK_JSON" | jq -r '.labels[]? // empty' | grep "^tier:" | head -1 | sed 's/^tier://')
+TIER=$(echo "$TASK_JSON" | jq -r 'if type == "array" then .[0].labels[]? else .labels[]? end // empty' | grep "^tier:" | head -1 | sed 's/^tier://')
 TIER="${TIER:-T1}"
-MODE=$(echo "$TASK_JSON" | jq -r '.labels[]? // empty' | grep "^mode:" | head -1 | sed 's/^mode://')
+MODE=$(echo "$TASK_JSON" | jq -r 'if type == "array" then .[0].labels[]? else .labels[]? end // empty' | grep "^mode:" | head -1 | sed 's/^mode://')
 MODE="${MODE:-normal}"
 
 # Detect modified files from git
@@ -97,11 +104,26 @@ Risk: ${TIER}"
     exit 1
   }
 
-  # Push branch
-  git push -u origin "$BRANCH" 2>/dev/null || {
-    echo "{\"error\":\"Push failed. You may need to set up remote.\"}" >&2
-    exit 1
-  }
+  # Push branch (skip if no remote configured)
+  HAS_REMOTE=false
+  if git remote get-url origin &>/dev/null; then
+    HAS_REMOTE=true
+    git push -u origin "$BRANCH" 2>/dev/null || {
+      echo "{\"error\":\"Push failed. Check remote access for origin.\"}" >&2
+      exit 1
+    }
+  fi
+
+  if [[ "$HAS_REMOTE" == "false" ]]; then
+    # No remote — commit only, skip PR creation
+    jq -n \
+      --arg status "DONE" \
+      --arg pr_url "" \
+      --arg branch "$BRANCH" \
+      --arg summary "Committed to ${BRANCH} (no remote configured, skipped push/PR)" \
+      '{status:$status, pr_url:$pr_url, branch:$branch, summary:$summary}'
+    exit 0
+  fi
 
   # PAUSE: ask LLM to write PR body
   local task_dir="${FORGE_DIR}/pipeline/runs/${TASK_ID}"
