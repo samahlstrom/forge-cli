@@ -1,0 +1,120 @@
+# refine tasks — fixed test inputs for the refine loop
+# Two sections: init fixtures (project types to init against)
+# and deliver tasks (work to run through the pipeline).
+# Like autoresearch's fixed dataset, these don't change between iterations.
+
+version: 2
+
+# ============================================================
+# INIT FIXTURES — project types to run forge init against
+# ============================================================
+# Each fixture is a minimal project that forge init must correctly detect
+# and generate a harness for. Tests detection, template rendering, and merging.
+
+init_fixtures:
+
+  - id: node-ts
+    description: "TypeScript Node.js project with vitest"
+    path: test/fixtures/refine-target
+    preset: sveltekit-ts
+    expected_commands:
+      typecheck: "tsc --noEmit"
+      test: "node --test"
+
+  - id: python-fastapi
+    description: "Python FastAPI project with pytest"
+    setup: |
+      mkdir -p /tmp/forge-refine-python
+      cd /tmp/forge-refine-python
+      cat > pyproject.toml << 'TOML'
+      [project]
+      name = "refine-target-py"
+      version = "0.1.0"
+      dependencies = ["fastapi", "uvicorn"]
+      [tool.pytest.ini_options]
+      testpaths = ["tests"]
+      TOML
+      mkdir -p app tests
+      cat > app/main.py << 'PY'
+      from fastapi import FastAPI
+      app = FastAPI()
+      @app.get("/health")
+      def health():
+          return {"status": "ok"}
+      PY
+      cat > tests/test_health.py << 'PY'
+      from fastapi.testclient import TestClient
+      from app.main import app
+      client = TestClient(app)
+      def test_health():
+          r = client.get("/health")
+          assert r.status_code == 200
+      PY
+      git init && git add -A && git commit -m "init"
+    preset: python-fastapi
+    expected_commands:
+      test: "pytest"
+      typecheck: "mypy"
+
+  - id: go-project
+    description: "Go project with chi router"
+    setup: |
+      mkdir -p /tmp/forge-refine-go
+      cd /tmp/forge-refine-go
+      go mod init refine-target
+      cat > main.go << 'GO'
+      package main
+      import (
+        "net/http"
+        "encoding/json"
+      )
+      func main() {
+        http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+          json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+        })
+        http.ListenAndServe(":8080", nil)
+      }
+      GO
+      cat > main_test.go << 'GO'
+      package main
+      import "testing"
+      func TestPlaceholder(t *testing.T) {}
+      GO
+      git init && git add -A && git commit -m "init"
+    preset: go
+    expected_commands:
+      test: "go test ./..."
+      typecheck: "go vet ./..."
+
+# ============================================================
+# DELIVER TASKS — work to run through the pipeline
+# ============================================================
+# Run against the node-ts fixture after forge init.
+# These are intentionally simple so measurement is fast.
+
+deliver_tasks:
+
+  - id: add-status-endpoint
+    description: >
+      Add a GET /status endpoint to src/index.js that returns JSON with
+      the server's uptime in seconds and current memory usage in MB.
+      Add a test for it in test/status.test.js.
+    expected_files:
+      - src/index.js
+      - test/status.test.js
+
+  - id: add-404-json
+    description: >
+      Fix the 404 handler in src/index.js to return JSON
+      {"error": "not found", "path": "<requested-path>"} instead of
+      plain text "not found". Update the content-type header to application/json.
+    expected_files:
+      - src/index.js
+
+  - id: add-request-logging
+    description: >
+      Add request logging middleware to src/index.js that logs each request
+      as a single-line JSON object with: method, url, status, and duration_ms.
+      Log to stdout. Do not add any dependencies.
+    expected_files:
+      - src/index.js

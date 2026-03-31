@@ -1,0 +1,53 @@
+# Refine criteria for forge init
+# Usage: forge refine templates/core/refine/criteria-init.yaml
+
+objective: |
+  Improve the forge init command so it produces a perfectly correct and complete
+  agent harness for any supported project type. Focus on template rendering,
+  file generation, and detection accuracy.
+
+measure: "bash templates/core/refine/measure-init-json.sh"
+
+primary: init_score
+
+metrics:
+  - name: init_score
+    direction: maximize
+    target: 1.0
+
+  - name: files_generated
+    direction: maximize
+    target: 1.0
+
+  - name: templates_resolved
+    direction: maximize
+    target: 1.0
+
+  - name: idempotent
+    direction: maximize
+    target: 1.0
+
+max_iterations: 25
+budget_per_iteration: "1.00"
+idle_timeout: 300
+
+scope:
+  include:
+    - templates/core/pipeline/
+    - templates/core/agents/
+    - templates/core/CLAUDE.md.hbs
+    - templates/core/forge.yaml.hbs
+    - templates/core/settings.json.hbs
+    - templates/core/skill-deliver.md.hbs
+    - internal/detect/
+    - internal/render/
+    - cmd/init.go
+  exclude:
+    - templates/core/refine/
+    - cmd/refine.go
+    - internal/refine/
+    - test/
+
+stop_when:
+  all_targets_met: true
+  no_improvement_for: 5
