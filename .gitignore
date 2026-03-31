@@ -23,6 +23,9 @@ Thumbs.db
 # Claude Code local state
 .claude/worktrees/
 
+# Forge refine run output
+.forge/refine/
+
 # goreleaser
 dist/
 
