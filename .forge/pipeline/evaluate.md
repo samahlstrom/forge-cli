@@ -75,6 +75,23 @@ Compute the composite score:
 composite = (edgar.weighted_total * 0.35) + (code_quality.weighted_total * 0.35) + (um_actually.weighted_total * 0.30)
 ```
 
+### 4a. Diff Findings Against Previous Iterations (iteration 2+)
+
+If this is iteration 2 or later, read ALL previous evaluation files (`evaluation-1.json`, `evaluation-2.json`, etc.) and the previous individual evaluator reports (`eval-<N>-edgar.json`, etc.). Build a finding-level diff:
+
+1. **Match findings across iterations** by comparing `(evaluator, file, category, title)` tuples. Findings with the same tuple across iterations are the **same finding**.
+2. **Classify each current finding:**
+   - `persistent` — appeared in at least one prior iteration and is still present. Record `first_seen_iteration` and `iterations_present` count.
+   - `new` — not present in any prior iteration.
+   - `regression` — was absent in the immediately prior iteration but appeared in a still-earlier iteration (reintroduced).
+3. **Identify fixed findings** — findings present in the prior iteration but absent in the current one. Record these as `findings_fixed[]`.
+4. **Severity escalation for persistent findings:** Any finding that has persisted for 2+ iterations without being addressed gets its effective priority escalated:
+   - `medium` persistent for 2+ iterations → treat as `high` in the revision brief
+   - `high` persistent for 2+ iterations → treat as `critical` in the revision brief
+   - Already `critical` → flag as **blocking** (must be fixed or the task cannot pass)
+
+Write the diff results into the evaluation JSON output (see Output Format below).
+
 ### 5. Determine Verdict
 
 **PASS** (composite >= 0.7 AND no evaluator has verdict "fail"):
@@ -83,6 +100,7 @@ composite = (edgar.weighted_total * 0.35) + (code_quality.weighted_total * 0.35)
 
 **REVISE** (composite >= 0.5 AND composite < 0.7, OR any evaluator has verdict "conditional"):
 - Collect all `critical` and `high` findings from all three evaluators.
+- Include ALL persistent findings regardless of their original severity (they were already missed at least once).
 - Generate a revision prompt: specific instructions for what needs to change.
 - Return to execution with the revision prompt as additional context.
 - Decrement remaining iterations.
@@ -99,8 +117,20 @@ When verdict is REVISE:
 ```
 ## Revision Required (Iteration /)
 
-### Critical Findings (must fix)
-[All critical/high findings from all evaluators, with file:line references]
+### Persistent Findings (unfixed across prior iterations — fix these FIRST)
+[Findings that appeared in previous iterations and remain unfixed.
+ Each entry includes: evaluator, severity (with escalation note if applicable),
+ file:line, title, first_seen_iteration, iterations_present.
+ These take absolute priority over new findings.]
+
+### New Critical/High Findings (must fix)
+[Findings that are new in this iteration, severity critical or high, with file:line references]
+
+### Findings Fixed This Iteration
+[Findings from the prior iteration that are now resolved — for context on what worked]
+
+### Regressions
+[Findings that were previously fixed but have reappeared — investigate whether a revision undid a prior fix]
 
 ### Scoring Gap
 - Edgar:  (target: 0.7)
@@ -109,7 +139,7 @@ When verdict is REVISE:
 - Composite:  (target: 0.7)
 
 ### Focus Areas
-[The 2-3 specific things that would most improve the score]
+[The 2-3 specific things that would most improve the score, with persistent findings weighted highest]
 ```
 
 2. The execution dispatcher will re-run affected subtasks with the revision brief as additional context.
@@ -145,7 +175,51 @@ When verdict is REVISE:
   "verdict": "pass|revise|fail",
   "revision_brief": "string or null",
   "critical_findings_count": 0,
-  "high_findings_count": 0
+  "high_findings_count": 0,
+  "finding_diff": {
+    "persistent": [
+      {
+        "evaluator": "edgar|code_quality|um_actually",
+        "finding_key": "(evaluator, file, category, title)",
+        "severity": "critical|high|medium|low",
+        "effective_severity": "critical|high|medium|low",
+        "title": "Short description",
+        "file": "src/foo.ts",
+        "line": 42,
+        "first_seen_iteration": 1,
+        "iterations_present": 2,
+        "escalated": true
+      }
+    ],
+    "new": [
+      {
+        "evaluator": "edgar|code_quality|um_actually",
+        "severity": "critical|high|medium|low",
+        "title": "Short description",
+        "file": "src/foo.ts",
+        "line": 42
+      }
+    ],
+    "fixed": [
+      {
+        "evaluator": "edgar|code_quality|um_actually",
+        "severity": "critical|high|medium|low",
+        "title": "Short description",
+        "file": "src/foo.ts",
+        "fixed_in_iteration": 2
+      }
+    ],
+    "regressions": [
+      {
+        "evaluator": "edgar|code_quality|um_actually",
+        "severity": "critical|high|medium|low",
+        "title": "Short description",
+        "file": "src/foo.ts",
+        "originally_fixed_iteration": 1,
+        "reintroduced_iteration": 3
+      }
+    ]
+  }
 }
 ```
 
@@ -157,6 +231,10 @@ If this is iteration 2+, read the previous evaluation file. Compare scores:
 - If composite improved by >= 0.1: the revision is working, continue.
 - If composite improved by < 0.05: the generator is stuck. Escalate the specific stuck dimensions in the revision brief.
 - If composite decreased: something went wrong. The revision made things worse. Revert and try a different approach in the revision brief.
+
+Also compare finding counts:
+- If persistent findings count is the same or increased from the prior iteration, the revision is not addressing the right things. Call this out explicitly in the revision brief and list the persistent findings by name.
+- If new findings were introduced while persistent ones remain unfixed, flag this as a prioritization failure — the executor is working on the wrong things.
 
 ## Rules
 

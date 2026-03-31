@@ -31,13 +31,18 @@ Check for evaluation files at `.forge/pipeline/runs//evaluation-*.json`. If any 
 Read the latest evaluation file. Pay special attention to:
 - `revision_brief` — specific instructions for what needs to change
 - `critical_findings_count` and `high_findings_count` — the severity of issues
+- `finding_diff.persistent[]` — findings that have appeared across multiple iterations and were never fixed. **These are the highest priority items.**
+- `finding_diff.regressions[]` — findings that were previously fixed but reappeared. Investigate whether a prior revision inadvertently undid a fix.
+- `finding_diff.fixed[]` — confirms what worked in the last iteration (do not re-break these)
 - Each evaluator's `findings[]` — the specific file:line problems to fix
 
 **In revision mode:**
 - Focus ONLY on the subtasks/files identified in the revision brief
 - Do NOT re-implement things that already passed evaluation
-- Address findings in priority order: critical first, then high, then medium
+- **Address persistent findings FIRST.** These have been flagged in prior iterations and were never resolved. Persistent findings with `escalated: true` have had their effective severity raised — treat them at their escalated severity level.
+- After persistent findings, address new critical/high findings, then regressions, then medium findings
 - If an evaluator's score DECREASED from the previous iteration, the revision made things worse — revert that specific change and try a different approach
+- **Never skip a persistent finding in favor of a new one.** The whole point of the revision loop is convergence — ignoring the same finding repeatedly wastes iteration budget.
 
 ## Execution Protocol
 
