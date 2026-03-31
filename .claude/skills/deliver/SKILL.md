@@ -20,8 +20,26 @@ The orchestrator script (`orchestrator.sh`) is the authority. It decides what ha
 - Decide a task is "too simple" for decomposition
 - Modify the pipeline flow in any way
 - Make judgment calls about what stages are needed
+- Ask the user for input unless the orchestrator explicitly returns ERROR with no retry action
 
-The pipeline ALWAYS runs: intake → classify → decompose → review-plan → execute → verify → evaluate → deliver. The only exceptions are `--quick` and `--hotfix` flags, which the USER chooses — never you.
+The pipeline runs autonomously: intake → classify → decompose → review-plan → execute → verify → evaluate → deliver. If a stage fails, the pipeline retries or errors — it does NOT ask for help. The only exceptions are `--quick` and `--hotfix` flags, which the USER chooses — never you.
+
+## Your Contract (Outermost Loop)
+
+You are the outermost agent. You follow the same open/close contract as every agent in the system:
+
+1. **OPEN**: "Starting /deliver pipeline for: [user's description]. Running orchestrator."
+2. **WORK**: Run the orchestrator loop (see Process below).
+3. **REPORT**: When the pipeline finishes (DONE or ERROR), read the run report at `.forge/pipeline/runs/<task-id>/run-report.json` and present a summary to the user:
+   - What was built (task title, PR URL, branch)
+   - How many agents were dispatched, how many succeeded/failed
+   - Key decisions agents made
+   - Issues encountered and how they were resolved
+   - Evaluation scores and iterations needed
+   - Any improvements suggested by the agent activity log
+4. **CLOSE**: "Pipeline complete."
+
+**The report to the user is mandatory.** The user needs to know what every agent did, what succeeded, what failed, and what could be improved. This is the feedback loop that lets the process get better over time.
 
 ## Process
 
@@ -29,37 +47,29 @@ The pipeline ALWAYS runs: intake → classify → decompose → review-plan → 
 2. Read the LAST LINE of JSON output. Branch on `status`:
 
 ### PAUSE
-The orchestrator needs LLM work (decompose, review-plan, execute, or evaluate).
+The orchestrator needs LLM work. Read `task` to determine which kind:
 
-**CRITICAL: ALL pause work MUST be dispatched to a subagent.** Never do pause work in the main context — it pollutes the conversation with noise. Your job is to:
-1. Launch a subagent (via the Agent tool) with the prompt file, context files, and output file path
-2. Wait for the subagent to complete
-3. Run the `resume` command to hand control back to the orchestrator
+**For classify pauses**: You are the risk classifier. Read the prompt at `prompt_file`. Run `bd show <task_id>` to read the bead's full context (title, description, notes). Assess the risk tier (T1/T2/T3) based on what the task actually does. Write your classification JSON to `output_file`. Then run the `resume` command.
 
-**For decompose pauses**: Launch a subagent to act as the architect agent. The subagent reads `prompt_file`, `.forge/agents/architect.md`, and any `context[]` files. It writes the decomposition JSON to `output_file`.
+**For decompose pauses**: Dispatch to a subagent. The subagent reads `.forge/agents/architect.md` and follows its Agent Contract (open → work → report → close). Output JSON to the output file. **The subagent must file its report.**
 
-**For review-plan pauses**: Launch a subagent to act as the plan reviewer. The subagent reads `prompt_file` (`.forge/pipeline/review-plan.md`) and the decomposition file. It writes its verdict JSON to `output_file`.
+**For review-plan pauses**: Dispatch to a subagent. The subagent reads `.forge/pipeline/review-plan.md` and follows the Agent Contract. If the verdict is "revise" or "reject", the orchestrator will automatically loop back to the architect — you do not intervene.
 
-**For execute pauses**: Launch a subagent as the execution dispatcher. It reads `.forge/pipeline/execute.md`, the decomposition, and launches its own sub-subagents for each subtask per wave. It writes execution results to `output_file`.
+**For execute pauses**: Dispatch to a subagent. This is the execution dispatcher — it launches further subagents for each subtask per wave. It follows `.forge/pipeline/execute.md` and the Agent Contract. **It must collect reports from every subagent it launches and write the agent-log.json.**
 
-**For evaluate pauses**: Launch a subagent as the evaluation dispatcher. It reads `.forge/pipeline/evaluate.md` and launches three parallel sub-subagents (Edgar, Code Quality, Um-Actually), each reading its own agent file from `.forge/agents/`. It aggregates scores and writes the evaluation to `output_file`.
-
-### HUMAN_INPUT
-The pipeline needs a user decision.
-- Present `question` and `options` to the user **verbatim** — no commentary, no recommendations, no editorializing
-- Wait for their answer (option index)
-- Run the `resume` command with their answer
-- Do NOT add opinions like "I'd recommend..." or "this seems fine" — you are not a decision maker
+**For evaluate pauses**: Dispatch to a subagent. This is the evaluation dispatcher — it launches the three evaluators (Edgar, Code Quality, Um-Actually) in parallel. It follows `.forge/pipeline/evaluate.md` and the Agent Contract. **It must collect reports from every evaluator.**
 
 ### DONE
 Pipeline complete.
-- Report: PR URL from `pr_url`, branch from `branch`, summary from `summary`
+- Read the run report at `.forge/pipeline/runs/<task-id>/run-report.json`
+- Present the full summary to the user (see Your Contract above)
 
 ### ERROR
-Pipeline failed.
+Pipeline hit a hard failure (max retries exhausted, verification loop broken, etc.).
 - Report: which `stage` failed, the `error` message
 - Point user to the debug file at `debug_file`
 - Suggest running the `action` command to retry
+- Still present whatever agent reports were collected before the failure
 
 3. After handling the JSON output, run the `resume` command the orchestrator gave you. This starts the next stage.
 4. Repeat the loop: run orchestrator → read JSON → do work → resume. Continue until you receive DONE or ERROR.

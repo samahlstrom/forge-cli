@@ -1,4 +1,42 @@
 {
+	"hooks": {
+		"PostToolUse": [
+			{
+				"hooks": [
+					{
+						"command": "bash .forge/hooks/post-edit.sh",
+						"timeout": 5000,
+						"type": "command"
+					}
+				],
+				"matcher": "Edit|Write"
+			}
+		],
+		"PreToolUse": [
+			{
+				"hooks": [
+					{
+						"command": "bash .forge/hooks/pre-edit.sh",
+						"timeout": 5000,
+						"type": "command"
+					}
+				],
+				"matcher": "Edit|Write"
+			}
+		],
+		"SessionStart": [
+			{
+				"hooks": [
+					{
+						"command": "bash .forge/hooks/session-start.sh",
+						"timeout": 10000,
+						"type": "command"
+					}
+				],
+				"matcher": ""
+			}
+		]
+	},
 	"permissions": {
 		"allow": [
 			"Read",
@@ -27,45 +65,8 @@
 			"Bash(mv *)",
 			"Bash(touch *)",
 			"Bash(chmod *)",
-			"Bash(jq *)"
-		]
-	},
-	"hooks": {
-		"SessionStart": [
-			{
-				"matcher": "",
-				"hooks": [
-					{
-						"type": "command",
-						"command": "bash .forge/hooks/session-start.sh",
-						"timeout": 10000
-					}
-				]
-			}
-		],
-		"PreToolUse": [
-			{
-				"matcher": "Edit|Write",
-				"hooks": [
-					{
-						"type": "command",
-						"command": "bash .forge/hooks/pre-edit.sh",
-						"timeout": 5000
-					}
-				]
-			}
-		],
-		"PostToolUse": [
-			{
-				"matcher": "Edit|Write",
-				"hooks": [
-					{
-						"type": "command",
-						"command": "bash .forge/hooks/post-edit.sh",
-						"timeout": 5000
-					}
-				]
-			}
+			"Bash(jq *)",
+			"Bash(npx playwright *)"
 		]
 	}
 }
