@@ -43,6 +43,11 @@ func DetectPython(cwd string) *DetectedStack {
 		result.Preset = "python-flask"
 	}
 
+	// Fallback preset if no framework matched
+	if result.Preset == "" {
+		result.Preset = "python-fastapi"
+	}
+
 	// Test runner
 	if has("pytest") {
 		result.TestRunner = &ToolInfo{"pytest", "pytest"}

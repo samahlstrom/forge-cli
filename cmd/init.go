@@ -335,6 +335,8 @@ func askInitQuestions(detected detect.DetectedStack, analysis *specAnalysis) ini
 	}
 
 	nothingDetected := detected.Language == "unknown"
+	// Auto-mode: detection succeeded and we have a preset — skip interactive questions
+	autoMode := !nothingDetected && detected.Preset != "" && initPreset == ""
 
 	// --- Stack selection ---
 	preset := initPreset
@@ -370,74 +372,71 @@ func askInitQuestions(detected detect.DetectedStack, analysis *specAnalysis) ini
 				preset = "react-next-ts"
 			}
 		}
+	} else if autoMode && preset == "" {
+		// Detection succeeded — use detected preset without asking
+		preset = detected.Preset
+		ui.Log.Step(fmt.Sprintf("Using detected preset: %s", ui.Cyan(preset)))
 	} else if preset == "" && !initYes {
 		if nothingDetected {
-			// Empty repo
-			ui.Log.Step("No existing code detected — let's set up your stack.")
-
-			langAnswer, cancelled := ui.Select("What language will you use?", languageOptions)
-			if cancelled {
-				ui.Cancel("Init cancelled.")
-				os.Exit(0)
-			}
-			chosenLanguage = langAnswer
-
-			frameworks := frameworkOptions[chosenLanguage]
-			if len(frameworks) > 0 {
-				opts := make([]ui.SelectOption, len(frameworks))
-				for i, f := range frameworks {
-					opts[i] = ui.SelectOption{Value: f.Value, Label: f.Label}
+			// Empty repo — try Claude inference first, fall back to interactive
+			ui.Log.Step("No existing code detected — inferring project context...")
+			inferred := inferProjectContext(mustCwd())
+			if inferred != nil && inferred.Language != "" {
+				chosenLanguage = inferred.Language
+				langPresets := map[string]string{
+					"typescript": "react-next-ts", "javascript": "react-next-ts",
+					"python": "python-fastapi", "go": "go",
 				}
-				fwAnswer, cancelled := ui.Select("What framework?", opts)
-				if cancelled {
-					ui.Cancel("Init cancelled.")
-					os.Exit(0)
+				if p, ok := langPresets[chosenLanguage]; ok {
+					preset = p
 				}
-				for _, f := range frameworks {
-					if f.Value == fwAnswer {
-						preset = f.Preset
-						break
-					}
-				}
-				if preset == "" {
-					preset = frameworks[0].Preset
-				}
-			}
-		} else {
-			// Existing code detected
-			if detected.Preset != "" {
-				confirmPreset, cancelled := ui.Confirm(
-					fmt.Sprintf("Detected %s — use this preset?", ui.Cyan(detected.Preset)),
-					true,
-				)
-				if cancelled {
-					ui.Cancel("Init cancelled.")
-					os.Exit(0)
-				}
-				if confirmPreset {
-					preset = detected.Preset
-				}
+				ui.Log.Step(fmt.Sprintf("Inferred: %s (%s)", ui.Cyan(chosenLanguage), ui.Cyan(preset)))
 			}
 
+			// If inference failed, ask interactively
 			if preset == "" {
-				presetOpts := make([]ui.SelectOption, len(availablePresets))
-				for i, pr := range availablePresets {
-					label := pr
-					if pr == detected.Preset {
-						label = pr + ui.Dim(" (detected)")
-					}
-					presetOpts[i] = ui.SelectOption{Value: pr, Label: label}
+				ui.Log.Step("Could not infer stack — let's set it up manually.")
+
+				langAnswer, cancelled := ui.Select("What language will you use?", languageOptions)
+				if cancelled {
+					ui.Cancel("Init cancelled.")
+					os.Exit(0)
 				}
-				// Move detected preset to front
-				if detected.Preset != "" {
-					for i, o := range presetOpts {
-						if o.Value == detected.Preset && i > 0 {
-							presetOpts = append([]ui.SelectOption{presetOpts[i]}, append(presetOpts[:i], presetOpts[i+1:]...)...)
+				chosenLanguage = langAnswer
+
+				frameworks := frameworkOptions[chosenLanguage]
+				if len(frameworks) > 0 {
+					opts := make([]ui.SelectOption, len(frameworks))
+					for i, f := range frameworks {
+						opts[i] = ui.SelectOption{Value: f.Value, Label: f.Label}
+					}
+					fwAnswer, cancelled := ui.Select("What framework?", opts)
+					if cancelled {
+						ui.Cancel("Init cancelled.")
+						os.Exit(0)
+					}
+					for _, f := range frameworks {
+						if f.Value == fwAnswer {
+							preset = f.Preset
 							break
 						}
 					}
+					if preset == "" {
+						preset = frameworks[0].Preset
+					}
 				}
-				selected, cancelled := ui.Select("Select preset:", presetOpts)
+			}
+		} else {
+			// Existing code detected but no preset matched — ask
+			if detected.Preset != "" {
+				preset = detected.Preset
+				ui.Log.Step(fmt.Sprintf("Using detected preset: %s", ui.Cyan(preset)))
+			} else {
+				presetOpts := make([]ui.SelectOption, len(availablePresets))
+				for i, pr := range availablePresets {
+					presetOpts[i] = ui.SelectOption{Value: pr, Label: pr}
+				}
+				selected, cancelled := ui.Select("Could not determine preset — select one:", presetOpts)
 				if cancelled {
 					ui.Cancel("Init cancelled.")
 					os.Exit(0)
@@ -481,21 +480,20 @@ func askInitQuestions(detected detect.DetectedStack, analysis *specAnalysis) ini
 		cmds.format = detected.Formatter.Command
 	}
 
-	if !initYes {
-		cmdLines := []string{
-			fmt.Sprintf("Typecheck: %s", ui.Cyan(cmds.typecheck)),
-			fmt.Sprintf("Lint:      %s", ui.Cyan(cmds.lint)),
-			fmt.Sprintf("Test:      %s", ui.Cyan(cmds.test)),
-		}
-		if cmds.format != "" {
-			cmdLines = append(cmdLines, fmt.Sprintf("Format:    %s", ui.Cyan(cmds.format)))
-		}
-		ui.Note(strings.Join(cmdLines, "\n"), "Verification commands (edit in forge.yaml later)")
+	// Show commands for awareness (not asking to change them)
+	cmdLines := []string{
+		fmt.Sprintf("Typecheck: %s", ui.Cyan(cmds.typecheck)),
+		fmt.Sprintf("Lint:      %s", ui.Cyan(cmds.lint)),
+		fmt.Sprintf("Test:      %s", ui.Cyan(cmds.test)),
 	}
+	if cmds.format != "" {
+		cmdLines = append(cmdLines, fmt.Sprintf("Format:    %s", ui.Cyan(cmds.format)))
+	}
+	ui.Note(strings.Join(cmdLines, "\n"), "Verification commands (edit in forge.yaml later)")
 
-	// --- Auto-PR ---
+	// --- Auto-PR: default true, only ask if interactive and nothing was auto-detected ---
 	autoPr := true
-	if !initYes {
+	if !initYes && !autoMode {
 		result, cancelled := ui.Confirm("Auto-create PRs on delivery?", true)
 		if cancelled {
 			ui.Cancel("Init cancelled.")
@@ -513,15 +511,42 @@ func askInitQuestions(detected detect.DetectedStack, analysis *specAnalysis) ini
 	domainRules := ""
 
 	if analysis != nil {
+		// Spec provided all context
 		projectDescription = analysis.Description
 		projectType = analysis.ProjectType
 		keyModules = analysis.Modules
 		architectureStyle = analysis.Architecture
 		sensitivePaths = analysis.SensitiveAreas
 		domainRules = analysis.DomainRules
-	}
+	} else if autoMode || initYes {
+		// Auto-mode: infer project context from codebase using Claude
+		inferred := inferProjectContext(mustCwd())
+		if inferred != nil {
+			projectDescription = inferred.Description
+			projectType = inferred.ProjectType
+			keyModules = inferred.Modules
+			architectureStyle = inferred.Architecture
+			sensitivePaths = inferred.SensitiveAreas
+			domainRules = inferred.DomainRules
+			if inferred.ProjectName != "" {
+				projectName = inferred.ProjectName
+			}
 
-	if !initYes && analysis == nil {
+			lines := []string{
+				fmt.Sprintf("Project:      %s", ui.Cyan(projectName)),
+				fmt.Sprintf("Type:         %s", ui.Cyan(projectType)),
+				fmt.Sprintf("Architecture: %s", ui.Cyan(architectureStyle)),
+			}
+			if projectDescription != "" {
+				lines = append(lines, fmt.Sprintf("Description:  %s", ui.Cyan(projectDescription)))
+			}
+			if len(keyModules) > 0 {
+				lines = append(lines, fmt.Sprintf("Modules:      %s", ui.Cyan(strings.Join(keyModules, ", "))))
+			}
+			ui.Note(strings.Join(lines, "\n"), "Inferred project context")
+		}
+	} else {
+		// Interactive: ask the user
 		ui.Log.Step("Tell us about your project so agents understand what they're working on.")
 
 		descAnswer, cancelled := ui.Text("What are you building?", "e.g. A SaaS platform for restaurant inventory management")
@@ -825,6 +850,48 @@ Be concise. Infer from context where the spec is ambiguous. Return ONLY valid JS
 	}
 
 	return &result, nil
+}
+
+// inferProjectContext uses claude to analyze the codebase and infer project metadata
+// without requiring user input. Returns nil if inference fails.
+func inferProjectContext(cwd string) *specAnalysis {
+	prompt := `You are analyzing an existing codebase to extract project metadata for an agent harness.
+
+Look at the directory structure, package files, README, and source code to infer:
+
+Return ONLY a JSON object with these fields:
+{
+  "project_name": "short project name",
+  "description": "one-sentence description of what this project does",
+  "language": "typescript|javascript|python|go",
+  "framework": "next|sveltekit|fastapi|django|flask|gin|chi|fiber|express|hono|null",
+  "project_type": "web-app|api|cli|library|automation|fullstack",
+  "modules": ["module1", "module2"],
+  "architecture": "monolith|client-server|microservices|static-site|library",
+  "sensitive_areas": "description of sensitive paths or empty string",
+  "domain_rules": "key domain rules or empty string",
+  "constraints": []
+}
+
+Be concise. Infer from the code — do not ask questions. Return ONLY valid JSON, no explanation.`
+
+	output, err := util.RunShell(cwd, 60*time.Second,
+		fmt.Sprintf("echo %q | claude -p --output-format json 2>/dev/null", prompt))
+	if err != nil {
+		return nil
+	}
+
+	jsonStr := extractJSON(output)
+	if jsonStr == "" {
+		return nil
+	}
+
+	var result specAnalysis
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		return nil
+	}
+
+	return &result
 }
 
 // --- bd init ---

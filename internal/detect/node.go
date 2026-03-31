@@ -64,6 +64,24 @@ func DetectNode(cwd string) *DetectedStack {
 	case hasDep(pkg, "fastify"):
 		result.Framework = "fastify"
 		result.Preset = "node-express"
+	case hasDep(pkg, "hono"):
+		result.Framework = "hono"
+		result.Preset = "react-next-ts"
+	case hasDep(pkg, "drizzle-orm"):
+		result.Framework = "node-api"
+		result.Preset = "react-next-ts"
+	case hasDep(pkg, "@trpc/server"):
+		result.Framework = "node-api"
+		result.Preset = "react-next-ts"
+	}
+
+	// Fallback: if we detected language + tools but no framework, still assign a preset
+	if result.Preset == "" {
+		if lang == "typescript" {
+			result.Preset = "react-next-ts"
+		} else {
+			result.Preset = "react-next-ts"
+		}
 	}
 
 	// Test runner
