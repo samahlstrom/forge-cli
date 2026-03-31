@@ -32,6 +32,7 @@ brews:
       owner: samahlstrom
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
     name: forge
     homepage: "https://github.com/samahlstrom/forge-cli"
     description: "Agent harness scaffolding for Claude Code"
