@@ -42,19 +42,20 @@ Each evaluator gets:
 - Its agent instructions from `.forge/agents/`
 - The execution summary (what was supposed to be built)
 
-**Launch all three simultaneously using subagents:**
+**⚠️ MANDATORY: You MUST use the Agent tool to launch three separate subagents in a SINGLE message. Do NOT read the agent .md files yourself. Do NOT perform evaluation yourself. You are a dispatcher, not an evaluator.**
 
-#### Evaluator A: Edgar the Edger (`.forge/agents/edgar.md`)
-- Focus: Edge cases, robustness, security surface, brittleness
-- Question: "What will break in production?"
+Launch all three in ONE message with three Agent tool calls:
 
-#### Evaluator B: Code Quality (`.forge/agents/code-quality.md`)
-- Focus: Architecture fit, maintainability, performance, correctness beyond tests
-- Question: "Is this code well-built for this codebase?"
+#### Agent call 1: Edgar the Edger
+- Prompt the subagent: "You are Edgar. Read and follow `.forge/agents/edgar.md`. Evaluate the diff from `git diff HEAD~1`. Read the execution summary at `.forge/pipeline/runs//execution.json`. Write your report JSON to `.forge/pipeline/runs//reports/eval--edgar.json`. Follow the Agent Contract: open, work, report, close."
 
-#### Evaluator C: Um-Actually (`.forge/agents/um-actually.md`)
-- Focus: API correctness, framework conventions, documentation alignment
-- Question: "Does this follow documented best practices?"
+#### Agent call 2: Code Quality
+- Prompt the subagent: "You are the Code Quality evaluator. Read and follow `.forge/agents/code-quality.md`. Evaluate the diff from `git diff HEAD~1`. Read the execution summary at `.forge/pipeline/runs//execution.json`. Write your report JSON to `.forge/pipeline/runs//reports/eval--code-quality.json`. Follow the Agent Contract: open, work, report, close."
+
+#### Agent call 3: Um-Actually
+- Prompt the subagent: "You are Um-Actually. Read and follow `.forge/agents/um-actually.md`. Evaluate the diff from `git diff HEAD~1`. Read the execution summary at `.forge/pipeline/runs//execution.json`. Write your report JSON to `.forge/pipeline/runs//reports/eval--um-actually.json`. Follow the Agent Contract: open, work, report, close."
+
+**After all three return**, proceed to step 3. Do NOT proceed until all three subagents have completed.
 
 ### 3. Collect Evaluator Reports
 
