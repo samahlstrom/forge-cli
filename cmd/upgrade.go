@@ -165,13 +165,32 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	// Clean up deprecated files from previous versions
 	deprecatedFiles := []string{
-		".forge/pipeline/classify.sh", // Replaced by classify.md (LLM agent classifier)
+		".forge/pipeline/classify.sh",      // Replaced by classify.md (LLM agent classifier)
+		".forge/pipeline/orchestrator.sh",  // Replaced by SKILL.md inline orchestration
+		".forge/pipeline/decompose.md",     // Merged into architect.md
+		".forge/pipeline/execute.md",       // Absorbed into SKILL.md
+		".forge/pipeline/evaluate.md",      // Absorbed into SKILL.md
+		".claude/skills/deliver/SKILL.md",  // Renamed to /forge
 	}
 	for _, dep := range deprecatedFiles {
 		depPath := filepath.Join(cwd, dep)
 		if util.Exists(depPath) {
 			_ = os.Remove(depPath)
 			ui.Log.Success(fmt.Sprintf("%s %s", dep, ui.Dim("— deprecated, removed")))
+		}
+	}
+
+	// Clean up empty directories left by deprecated files
+	deprecatedDirs := []string{
+		".claude/skills/deliver",
+	}
+	for _, dir := range deprecatedDirs {
+		dirPath := filepath.Join(cwd, dir)
+		if util.Exists(dirPath) {
+			entries, _ := os.ReadDir(dirPath)
+			if len(entries) == 0 {
+				_ = os.Remove(dirPath)
+			}
 		}
 	}
 
@@ -259,5 +278,7 @@ func buildUpgradeContext(config map[string]any, detected detect.DetectedStack, p
 		"is_nextjs":    preset == "react-next-ts",
 		"is_fastapi":   preset == "python-fastapi",
 		"is_go":        preset == "go",
+		"stackFile":    ".forge/context/stack.md",
+		"projectFile":  ".forge/context/project.md",
 	}
 }
