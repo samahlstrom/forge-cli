@@ -37,7 +37,7 @@ scope:
     - templates/core/CLAUDE.md.hbs
     - templates/core/forge.yaml.hbs
     - templates/core/settings.json.hbs
-    - templates/core/skill-deliver.md.hbs
+    - templates/core/skill-forge.md.hbs
     - internal/detect/
     - internal/render/
     - cmd/init.go

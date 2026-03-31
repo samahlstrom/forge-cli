@@ -28,7 +28,7 @@ if [ -n "$READY" ] && [ "$READY" != "[]" ]; then
 	echo "$READY" | jq -r '.[] | "  \(.id) [P\(.priority)] \(.title)"' 2>/dev/null
 	echo "[forge] Claim one with: bd update <id> --claim"
 else
-	echo "[forge] No tasks ready. Start work with: /deliver \"description\""
+	echo "[forge] No tasks ready. Start work with: /forge \"description\""
 fi
 
 exit 0

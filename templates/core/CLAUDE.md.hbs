@@ -21,8 +21,8 @@
 
 ## Workflow
 
-All non-trivial work flows through the `/deliver` command:
-1. `/deliver "description"` — starts tracked work
+All non-trivial work flows through the `/forge` command:
+1. `/forge "description"` — starts tracked work
 2. Pipeline: intake → classify → decompose → **review-plan** → execute → verify → **evaluate** → deliver
 3. Every edit is tracked via beads (`.forge/beads/`)
 4. Mechanical verification (typecheck, lint, test) runs after execution
@@ -36,7 +36,7 @@ For large specs, PRDs, or requirements documents:
 2. Multi-pass analysis: extract → map domains → decompose → identify skills
 3. Review and refine the plan before writing any code
 4. Generate custom skills for repetitive patterns
-5. Execute phase-by-phase through `/deliver`
+5. Execute phase-by-phase through `/forge`
 
 Specs are stored in `.forge/specs/`. Run `forge ingest <file>` to add a new spec.
 
@@ -83,4 +83,4 @@ Available agents for subtask assignment:
 - `bd update <id> --claim` — atomically claim a task
 - `bd close <id> --reason "..."` — mark work complete
 - The pre-edit hook blocks file changes without an in-progress task
-- Use `/deliver --quick` for lightweight changes with minimal ceremony
+- Use `/forge --quick` for lightweight changes with minimal ceremony

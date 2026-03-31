@@ -33,7 +33,7 @@ fi
 # Check for in-progress tasks
 IN_PROGRESS=$(bd list --status in_progress --json 2>/dev/null)
 if [ -z "$IN_PROGRESS" ] || [ "$IN_PROGRESS" = "[]" ]; then
-	echo '{"decision":"block","reason":"No active task. Run /deliver to start tracked work, or use /deliver --quick for a lightweight change."}'
+	echo '{"decision":"block","reason":"No active task. Run /forge to start tracked work, or use /forge --quick for a lightweight change."}'
 	exit 0
 fi
 

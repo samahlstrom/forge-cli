@@ -290,7 +290,7 @@ func runInit(_ *cobra.Command, _ []string) error {
 	if specId != "" {
 		ui.Outro(ui.Green("Harness ready!") + ui.Dim(fmt.Sprintf(" Run /ingest %s in Claude Code to start.", specId)))
 	} else {
-		ui.Outro(ui.Green("Harness ready!") + ui.Dim(" Run /deliver in Claude Code to start."))
+		ui.Outro(ui.Green("Harness ready!") + ui.Dim(" Run /forge in Claude Code to start."))
 	}
 	return nil
 }
@@ -622,16 +622,13 @@ func generateHarness(cwd string, detected detect.DetectedStack, answers initAnsw
 		{"core/forge.yaml.hbs", "forge.yaml"},
 		{"core/CLAUDE.md.hbs", "CLAUDE.md"},
 		{"core/settings.json.hbs", ".claude/settings.json"},
-		{"core/skill-deliver.md.hbs", ".claude/skills/deliver/SKILL.md"},
+		{"core/skill-forge.md.hbs", ".claude/skills/forge/SKILL.md"},
 		{"core/skill-creator.md.hbs", ".claude/skills/skill-creator/SKILL.md"},
 		{"core/skill-ingest.md.hbs", ".claude/skills/ingest/SKILL.md"},
-		{"core/pipeline/orchestrator.sh.hbs", ".forge/pipeline/orchestrator.sh"},
+		{"core/pipeline/helpers.sh.hbs", ".forge/pipeline/helpers.sh"},
 		{"core/pipeline/intake.sh.hbs", ".forge/pipeline/intake.sh"},
 		{"core/pipeline/classify.md.hbs", ".forge/pipeline/classify.md"},
-		{"core/pipeline/decompose.md.hbs", ".forge/pipeline/decompose.md"},
-		{"core/pipeline/execute.md.hbs", ".forge/pipeline/execute.md"},
 		{"core/pipeline/review-plan.md.hbs", ".forge/pipeline/review-plan.md"},
-		{"core/pipeline/evaluate.md.hbs", ".forge/pipeline/evaluate.md"},
 		{"core/pipeline/verify.sh.hbs", ".forge/pipeline/verify.sh"},
 		{"core/pipeline/deliver.sh.hbs", ".forge/pipeline/deliver.sh"},
 		{"core/agents/architect.md.hbs", ".forge/agents/architect.md"},
@@ -702,6 +699,9 @@ func generateHarness(cwd string, detected detect.DetectedStack, answers initAnsw
 			_ = os.Chmod(outputPath, 0o755)
 		}
 	}
+
+	// Generate agent roster from frontmatter
+	_ = generateRoster(cwd)
 
 	// Create empty directories
 	_ = util.EnsureDir(filepath.Join(cwd, ".forge", "addons"))
@@ -776,6 +776,8 @@ func buildTemplateContext(detected detect.DetectedStack, answers initAnswers) re
 			},
 		},
 		"preset":      answers.preset,
+		"stackFile":    ".forge/context/stack.md",
+		"projectFile":  ".forge/context/project.md",
 		"is_sveltekit": answers.preset == "sveltekit-ts",
 		"is_nextjs":    answers.preset == "react-next-ts",
 		"is_fastapi":   answers.preset == "python-fastapi",
@@ -928,7 +930,7 @@ func displayInitResults(files []generatedFile, specId string) {
 	if specId != "" {
 		ui.Log.Message(fmt.Sprintf("  4. Open Claude Code → %s", ui.Cyan(fmt.Sprintf("/ingest %s", specId))))
 	} else {
-		ui.Log.Message(fmt.Sprintf("  4. Open Claude Code → %s", ui.Cyan(`/deliver "your first task"`)))
+		ui.Log.Message(fmt.Sprintf("  4. Open Claude Code → %s", ui.Cyan(`/forge "your first task"`)))
 	}
 	ui.Log.Message("")
 	ui.Log.Message(fmt.Sprintf("  %s", ui.Dim("Optional:")))

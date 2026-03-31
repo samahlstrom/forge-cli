@@ -1025,7 +1025,7 @@ func tryAutoResolveMerge(cwd string) bool {
 
 func buildTaskPrompt(task bd.Issue, specID, filesStr, tier, agent, specTaskID, reportPath string) string {
 	desc := task.Description
-	return fmt.Sprintf(`/deliver "%s — %s.%s Risk: %s. Agent: %s. Spec ref: %s"
+	return fmt.Sprintf(`/forge "%s — %s.%s Risk: %s. Agent: %s. Spec ref: %s"
 
 IMPORTANT: Before you finish, write a JSON report to "%s" with this structure:
 {

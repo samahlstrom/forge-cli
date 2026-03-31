@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Measure /deliver quality by running a task against isomed-caregiver
+# Measure /forge quality by running a task against isomed-caregiver
 # Outputs JSON metrics for forge refine
 set -euo pipefail
 
@@ -36,7 +36,7 @@ ITER="${FORGE_REFINE_ITER:-0}"
 TASK_IDX=$((ITER % ${#TASKS[@]}))
 TASK="${TASKS[$TASK_IDX]}"
 
-# ── Run /deliver via claude -p ─────────────────────────────────
+# ── Run /forge via claude -p ───────────────────────────────────
 PROMPT="You are working in: $ISOMED_DIR
 
 This is a TypeScript backend project using Drizzle ORM, jose for JWT, bcryptjs for hashing.

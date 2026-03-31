@@ -36,14 +36,11 @@ init:
       - forge.yaml
       - CLAUDE.md
       - .claude/settings.json
-      - .claude/skills/deliver/SKILL.md
-      - .forge/pipeline/orchestrator.sh
+      - .claude/skills/forge/SKILL.md
+      - .forge/pipeline/helpers.sh
       - .forge/pipeline/intake.sh
       - .forge/pipeline/classify.md
-      - .forge/pipeline/decompose.md
       - .forge/pipeline/review-plan.md
-      - .forge/pipeline/execute.md
-      - .forge/pipeline/evaluate.md
       - .forge/pipeline/verify.sh
       - .forge/pipeline/deliver.sh
       - .forge/agents/architect.md

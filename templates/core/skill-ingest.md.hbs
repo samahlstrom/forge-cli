@@ -5,7 +5,7 @@ description: Parse a spec document into a structured project plan with epics, fe
 
 # ingest
 
-> Decompose a spec document into a structured project plan, generate custom skills, and execute phase-by-phase through the /deliver pipeline.
+> Decompose a spec document into a structured project plan, generate custom skills, and execute phase-by-phase through the /forge pipeline.
 
 ## Trigger
 
@@ -57,7 +57,7 @@ Read pass-1 + pass-2 outputs. Decompose into:
 
 - **Epics**: one per domain or major capability
 - **Features**: logical groupings within an epic (max 5 per epic)
-- **Tasks**: atomic units of work, each completable in a single `/deliver` call (max 8 per feature)
+- **Tasks**: atomic units of work, each completable in a single `/forge` call (max 8 per feature)
 
 Each task gets:
 - `id`: unique identifier (e.g., task-1-1-1)
@@ -230,7 +230,7 @@ Options you can append:
 
 For manual execution instead:
 - Run `bd ready -t task -l "spec:<spec-id>"` to see available tasks
-- Pick a task and run `/deliver` with its description
+- Pick a task and run `/forge` with its description
 - Close the bead with `bd close <id>` when done
 
 ### Resuming
