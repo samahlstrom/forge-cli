@@ -2,9 +2,10 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/samahlstrom/forge-cli/internal/static"
 	"os"
 
+	"github.com/samahlstrom/forge-cli/internal/static"
+	"github.com/samahlstrom/forge-cli/internal/updater"
 	"github.com/spf13/cobra"
 )
 
@@ -35,8 +36,10 @@ Other commands:
 
 func Execute() {
 	rootCmd.Version = static.Version
+	updater.RefreshInBackground()
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	updater.NotifyIfAvailable(static.Version)
 }
