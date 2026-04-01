@@ -1,7 +1,6 @@
-.PHONY: setup build install release clean test vet
+.PHONY: setup build clean test vet ship
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "0.2.0")
-INSTALL_PATH ?= /opt/homebrew/bin/forge
 
 setup:
 	git config core.hooksPath .githooks
@@ -9,15 +8,6 @@ setup:
 
 build:
 	go build -ldflags "-X github.com/samahlstrom/forge-cli/internal/static.Version=$(VERSION)" -o bin/forge .
-
-install:
-	go build -ldflags "-X github.com/samahlstrom/forge-cli/internal/static.Version=$(VERSION)" -o $(INSTALL_PATH) .
-	@echo "Installed forge $(VERSION) → $(INSTALL_PATH)"
-
-release:
-	git tag -a v$(VERSION) -m "v$(VERSION)" 2>/dev/null || true
-	git push origin v$(VERSION) 2>/dev/null || true
-	goreleaser release --clean
 
 clean:
 	rm -f bin/forge bin/forge-go
@@ -27,3 +17,30 @@ test:
 
 vet:
 	go vet ./...
+
+# Push, wait for GitHub Action to release, then brew upgrade locally
+ship:
+	@echo "Pushing to origin (tags included)..."
+	git push --follow-tags
+	@echo ""
+	@echo "Waiting for GitHub release workflow..."
+	@TAG=$$(git describe --tags --exact-match HEAD 2>/dev/null) && \
+	echo "Tag: $$TAG" && \
+	gh run list --workflow=auto-release.yml --limit=1 --json status,conclusion,databaseId -q '.[0]' && \
+	echo "Watching release run..." && \
+	RUN_ID="" && \
+	for i in 1 2 3 4 5 6 7 8 9 10; do \
+		RUN_ID=$$(gh run list --workflow=auto-release.yml --limit=1 --json databaseId -q '.[0].databaseId') && \
+		if [ -n "$$RUN_ID" ]; then break; fi; \
+		sleep 2; \
+	done && \
+	if [ -n "$$RUN_ID" ]; then \
+		gh run watch $$RUN_ID && \
+		echo "" && \
+		echo "Upgrading forge via Homebrew..." && \
+		brew upgrade samahlstrom/tap/forge && \
+		echo "" && \
+		forge version; \
+	else \
+		echo "Could not find workflow run. Check: gh run list --workflow=auto-release.yml"; \
+	fi
