@@ -101,6 +101,7 @@ After ALL subtasks in a wave complete:
 
 1. **Run typecheck:** `go vet ./...`
 2. **If the wave definition has `gate: "typecheck + test"`**, also run: `go test ./...`
+3. **If the wave definition has `gate: "typecheck + test + security scan"` (required for T3 tasks)**, also run the security scan command from `forge.yaml` (`commands.security`). If no security scan command is configured, log a warning but do not block — and note in execution.json.
 
 ### 5. Handle Failures
 
@@ -147,6 +148,8 @@ After all waves are done:
   }
 }
 ```
+
+**IMPORTANT — verification field values MUST be one of: `"passed"`, `"failed"`, or `"skipped"` (with a reason). `"pending"` is not a valid value. If lint or any check did not run, write `"skipped: <reason>"`. A missing or "pending" status blocks delivery — the evaluators treat it as a failed check.**
 
 ## Dispatcher Report
 

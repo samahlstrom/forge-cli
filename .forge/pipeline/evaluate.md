@@ -97,8 +97,14 @@ Write the diff results into the evaluation JSON output (see Output Format below)
 **PASS** (composite >= 0.7 AND no evaluator has verdict "fail"):
 - Proceed to delivery.
 - Write evaluation report and move on.
+- **File follow-up issues for any medium/low findings that were out of scope for this task.** Collect all `medium` and `low` findings from all three evaluators that were not in the revision brief (i.e., not addressed in this task). For each, run: `bd create --title="<finding title>" --description="<file:line> — <finding scenario>" --type=task --priority=3`. This ensures out-of-scope findings are tracked rather than dropped.
 
-**REVISE** (composite >= 0.5 AND composite < 0.7, OR any evaluator has verdict "conditional"):
+**REVISE** (any of the following):
+- composite >= 0.5 AND composite < 0.7
+- any evaluator has verdict "conditional"
+- any evaluator has verdict "fail" AND iteration < max_iterations
+
+For all REVISE cases:
 - Collect all `critical` and `high` findings from all three evaluators.
 - Include ALL persistent findings regardless of their original severity (they were already missed at least once).
 - Generate a revision prompt: specific instructions for what needs to change.
