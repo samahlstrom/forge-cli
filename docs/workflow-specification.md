@@ -350,8 +350,8 @@ Identify logical domains/modules, map cross-references, build dependency graph, 
 
 **Pass 3 — Epic/Feature/Task Breakdown:**
 - Epics: one per domain or major capability
-- Features: logical groupings (max 5 per epic)
-- Tasks: atomic units (max 8 per feature, completable in single `/deliver`)
+- Features: logical groupings (as many as the spec requires)
+- Tasks: atomic units (completable in single `/deliver`, as many as needed)
 - Each task gets: id, title, description with acceptance criteria, risk tier, dependencies, predicted files, agent assignment
 
 **Pass 4 — Skill Identification:**
