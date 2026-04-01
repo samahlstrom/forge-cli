@@ -29,5 +29,5 @@ else
   next="v${major}.${minor}.${patch}"
 fi
 
-git tag "$next"
+git tag -a "$next" -m "Release $next"
 echo "Tagged: $next"

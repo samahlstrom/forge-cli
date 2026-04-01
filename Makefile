@@ -21,7 +21,7 @@ vet:
 # Push, wait for GitHub Action to release, then brew upgrade locally
 ship:
 	@echo "Pushing to origin (tags included)..."
-	@git push --follow-tags
+	@git push && git push origin $$(git describe --tags --exact-match HEAD)
 	@echo ""
 	@TAG=$$(git describe --tags --exact-match HEAD 2>/dev/null) && \
 	echo "Tag: $$TAG" && \
