@@ -146,7 +146,7 @@ Follow the Agent Contract: OPEN → WORK → REPORT → CLOSE."
 Read `plan-review.json`. Check `verdict`:
 - **approve** → proceed to Step 7
 - **revise** or **reject** → archive current review as `plan-review-N.json`, increment counter
-  - If counter >= 3: report failure to user ("Plan failed review 3 times"), stop
+  - If counter >= 3: close the task bead (`bd close <task_id> --reason "Plan failed review 3 times"`), report failure to user, stop
   - Otherwise: go back to Step 5 with the `revision_instructions` from the review as additional context for the architect
 
 ## Step 7: Execute Waves
@@ -207,7 +207,7 @@ When complete:
 5. If the gate fails:
    - Read error output to identify which subtask's files caused the failure
    - Retry that subtask ONCE with the error output as additional context
-   - If retry fails: `Bash("git checkout -- <files>")` to revert, mark subtask as deferred, continue
+   - If retry fails: `Bash("git checkout -- <files>")` to revert, close the subtask bead (`bd close <bead_id> --reason "Deferred: gate failure after retry"`), mark subtask as deferred, continue
 
 6. After ALL waves complete, read all reports from `.forge/pipeline/runs/<task_id>/reports/`:
    - Compile `execution.json`: status, waves_executed, subtasks_completed, subtasks_deferred, files_modified, verification results
@@ -223,6 +223,8 @@ Bash("bash .forge/pipeline/verify.sh <task_id> <tier>")
 ```
 
 Read the JSON output. If `passed` is false:
+- Close the task bead: `Bash("bd close <task_id> --reason 'Verification failed: <failed_check>'")`
+- Also close any open subtask beads: for each subtask bead that wasn't already closed, run `bd close <bead_id> --reason "Parent task verification failed"`
 - Report the failed check and stderr to the user
 - Stop the pipeline (user needs to fix and `/forge --resume <task_id>`)
 
@@ -277,6 +279,8 @@ Determine verdict:
 
 - **FAIL** (composite < 0.5 OR evaluator verdict "fail" AND iteration >= 3):
   Write `evaluation-<iteration>.json` with verdict "fail"
+  Close the task bead: `Bash("bd close <task_id> --reason 'Evaluation failed: composite=<score>'")`
+  Also close any open subtask beads: for each subtask bead that wasn't already closed, run `bd close <bead_id> --reason "Parent task evaluation failed"`
   Report failure to user with all findings. Stop.
 
 ## Step 11: Deliver

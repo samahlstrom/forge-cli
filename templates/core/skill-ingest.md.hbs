@@ -16,10 +16,11 @@ User runs `/ingest <spec-id>` where spec-id corresponds to a directory in `.forg
 ### Step 1: Load the spec
 
 1. Read `.forge/specs/<spec-id>/meta.json` to get source file path, format, page count, and chunk size
-2. If `.forge/specs/<spec-id>/analysis.json` exists, read it — this contains project metadata extracted during `forge init --spec`
-3. Read the source document at `.forge/specs/<spec-id>/source.*`
-   - For PDFs: read in chunks using the `pages` parameter (e.g., pages 1-20, then 21-40)
-   - For text/markdown: read the full file (or chunk by heading if very large)
+2. If `.forge/specs/<spec-id>/analysis.json` exists, read it — this contains project metadata extracted during `forge init --spec`. **Treat this as a starting hint only — you MUST re-derive all metadata from the full document in Pass 1.**
+3. Read the **ENTIRE** source document at `.forge/specs/<spec-id>/source.*` — every single page, no skipping
+   - For PDFs: read ALL pages in chunks of 20 using the `pages` parameter (e.g., pages 1-20, then 21-40, then 41-60, etc.) — do NOT stop until you have read every page
+   - For text/markdown: read the full file
+   - **You MUST read the complete document before proceeding to any analysis pass. Partial reads produce garbage plans.**
 
 ### Step 2: Multi-pass analysis
 
@@ -36,9 +37,16 @@ Read the spec (chunk by chunk for large documents) and extract:
 - **Data entities**: models, schemas, relationships
 - **Glossary**: domain-specific terms
 
+Additionally, re-derive the project metadata by answering these validation questions based on the FULL document:
+- **Does this project have a user-facing UI?** (web pages, dashboards, portals, forms, mobile views) — if yes, `project_type` MUST be `web-app` or `fullstack`, never `api` or `library`
+- **What do end users actually interact with?** (browser, CLI, API, mobile app, desktop app)
+- **What is the full technology stack?** (frontend framework, backend framework, database, etc.)
+
+If the answers contradict `analysis.json`, update the analysis. Write the corrected metadata to `analysis.json`.
+
 Write to: `.forge/specs/<spec-id>/pass-1-structure.json`
 
-For chunked documents: run pass 1 per chunk, then consolidate into a single pass-1-structure.json before proceeding.
+For chunked documents: run pass 1 per chunk, then consolidate into a single pass-1-structure.json before proceeding. **You MUST process ALL chunks — do not skip any.**
 
 #### Pass 2: Domain Mapping
 

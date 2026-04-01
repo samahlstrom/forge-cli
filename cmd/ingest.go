@@ -469,10 +469,7 @@ func buildAnalysisPrompt(specPath, ext string, pageCount *int, corrections strin
 		if pageCount != nil {
 			pagesToRead = *pageCount
 		}
-		if pagesToRead > 40 {
-			pagesToRead = 40
-		}
-		readInstruction = fmt.Sprintf(`Read the PDF at "%s" (first %d pages) to understand what this project is.`, specPath, pagesToRead)
+		readInstruction = fmt.Sprintf(`Read the ENTIRE PDF at "%s" (all %d pages — read in batches of 20 if needed, but read EVERY page). You must understand the FULL scope of this project before extracting metadata.`, specPath, pagesToRead)
 	} else {
 		readInstruction = fmt.Sprintf(`Read the file at "%s" to understand what this project is.`, specPath)
 	}
@@ -499,7 +496,12 @@ Extract the following as a JSON object. Output ONLY the JSON, no explanation, no
   "constraints": ["list", "of", "hard", "constraints"]
 }
 
-Infer language and framework from the spec's technology requirements. If not specified, choose the best fit based on the project type. For medical/healthcare projects, note HIPAA requirements in sensitive_areas.%s`, readInstruction, correctionsClause)
+CRITICAL INSTRUCTIONS:
+- You MUST read the ENTIRE document before answering. Do NOT stop early or skim.
+- Pay special attention to whether this project has a USER-FACING UI (web pages, dashboards, portals, forms, etc.). If end users interact with it through a browser, it is a web-app or fullstack — NOT an api or library.
+- Infer language and framework from the spec's technology requirements. If not specified, choose the best fit based on the project type.
+- For medical/healthcare projects, note HIPAA requirements in sensitive_areas.
+- If the spec describes both a backend AND a frontend/UI, project_type MUST be "fullstack" or "web-app", never just "api".%s`, readInstruction, correctionsClause)
 }
 
 func extractJSON(content string) string {
