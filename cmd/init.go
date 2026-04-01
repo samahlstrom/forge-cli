@@ -153,6 +153,12 @@ var architectureOptions = []ui.SelectOption{
 func runInit(_ *cobra.Command, _ []string) error {
 	cwd, _ := os.Getwd()
 
+	// Guard: prevent initializing forge inside its own source repo
+	if isForgeSelfRepo(cwd) {
+		ui.Log.Error("Cannot run `forge init` inside the forge-cli source repository.")
+		return fmt.Errorf("self-init blocked")
+	}
+
 	ui.Intro(ui.Bold(fmt.Sprintf("forge v%s", static.Version)) + ui.Dim(" — Agent Harness for Claude Code"))
 
 	// Check for existing harness

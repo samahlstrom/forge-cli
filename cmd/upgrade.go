@@ -41,6 +41,12 @@ var neverTouch = map[string]bool{
 func runUpgrade(cmd *cobra.Command, args []string) error {
 	cwd, _ := os.Getwd()
 
+	// Guard: prevent upgrading forge inside its own source repo
+	if isForgeSelfRepo(cwd) {
+		ui.Log.Error("Cannot run `forge upgrade` inside the forge-cli source repository.")
+		return fmt.Errorf("self-upgrade blocked")
+	}
+
 	ui.Intro(ui.Bold("forge upgrade"))
 
 	if !util.Exists(filepath.Join(cwd, "forge.yaml")) {
@@ -167,10 +173,6 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	deprecatedFiles := []string{
 		".forge/pipeline/classify.sh",      // Replaced by classify.md (LLM agent classifier)
 		".forge/pipeline/orchestrator.sh",  // Replaced by SKILL.md inline orchestration
-		".forge/pipeline/decompose.md",     // Merged into architect.md
-		".forge/pipeline/execute.md",       // Absorbed into SKILL.md
-		".forge/pipeline/evaluate.md",      // Absorbed into SKILL.md
-		".claude/skills/deliver/SKILL.md",  // Renamed to /forge
 	}
 	for _, dep := range deprecatedFiles {
 		depPath := filepath.Join(cwd, dep)

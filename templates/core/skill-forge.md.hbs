@@ -59,7 +59,7 @@ Parse the JSON output: `title`, `description`, `mode`, `quality_score`.
 Create a bead for tracking:
 
 ```
-Bash("echo '<description>' | bd create '<title>' --body-file - -l 'mode:<mode>' --json")
+Bash("echo '<description>' | bd create '<title>' --body-file - --add-label 'mode:<mode>' --json")
 ```
 
 Extract `task_id` from the JSON response (the `.id` field).
@@ -87,7 +87,7 @@ Write your classification to `.forge/pipeline/runs/<task_id>/classification.json
 {"tier": "T1|T2|T3", "reason": "One sentence explaining why"}
 ```
 
-Label the bead: `Bash("bd update <task_id> -l 'tier:<tier>'")`
+Label the bead: `Bash("bd update <task_id> --add-label 'tier:<tier>'")`
 
 ## Step 4: Mode Check
 
@@ -103,10 +103,16 @@ Dispatch TWO agents in parallel (single message, two Agent tool calls):
 ```
 "You are the Architect agent. Read and follow .forge/agents/architect.md.
 Task: bd show <task_id>
-Read the team roster: .forge/agents/roster.yaml
 Read context: .forge/context/stack.md, .forge/context/project.md
-Create child beads for each subtask via bd create.
 Write your execution manifest JSON to .forge/pipeline/runs/<task_id>/decomposition.json
+
+Available agents for subtask assignment (each maps to .forge/agents/<name>.md):
+- backend — server logic, APIs, services, data access
+- frontend — UI components, pages, client-side logic
+- quality — writes tests, verifies coverage
+- security — security-critical changes, auth, crypto
+
+Assign each subtask to one of these agents based on what the subtask does.
 Follow the Agent Contract: OPEN → WORK → REPORT → CLOSE."
 ```
 

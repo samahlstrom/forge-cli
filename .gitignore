@@ -23,8 +23,9 @@ Thumbs.db
 # Claude Code local state
 .claude/worktrees/
 
-# Forge refine run output
-.forge/refine/
+# Forge init output — this repo IS forge, not a forge-managed project
+.forge/
+forge.yaml
 
 # goreleaser
 dist/
