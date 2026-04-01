@@ -12,6 +12,8 @@ Built in Go. Cross-platform. Single binary.
 brew install samahlstrom/tap/forge
 ```
 
+> **Note:** Always use the full tap path (`samahlstrom/tap/forge`). There is an unrelated tool also called `forge` in Homebrew core — `brew install forge` will install the wrong thing.
+
 ### Go install
 
 ```bash
