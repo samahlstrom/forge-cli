@@ -4,7 +4,8 @@
 set -euo pipefail
 
 FORGE_DIR=".forge"
-CONFIG_FILE="${FORGE_DIR}/forge.yaml"
+FORGE_GLOBAL="${FORGE_GLOBAL:-$HOME/.forge}"
+CONFIG_FILE="${CONFIG_FILE:-forge.yaml}"
 
 TASK_ID="${1:-}"
 TIER="${2:-T1}"
@@ -40,11 +41,12 @@ read_config_bool() {
 
 # --- Check definitions ---
 
-CMD_TYPECHECK="{{commands.typecheck}}"
-CMD_LINT="{{commands.lint}}"
-CMD_TEST="{{commands.test}}"
+# Read commands from forge.yaml at runtime (no template vars needed)
+CMD_TYPECHECK=$(read_config "commands.typecheck")
+CMD_LINT=$(read_config "commands.lint")
+CMD_TEST=$(read_config "commands.test")
 
-# Fallbacks if template vars are empty
+# Fallbacks if config is empty
 CMD_TYPECHECK="${CMD_TYPECHECK:-npm run check}"
 CMD_LINT="${CMD_LINT:-npm run lint}"
 CMD_TEST="${CMD_TEST:-npx vitest run}"

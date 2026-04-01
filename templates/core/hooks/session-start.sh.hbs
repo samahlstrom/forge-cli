@@ -1,34 +1,52 @@
 #!/bin/bash
-# .forge/hooks/session-start.sh — SessionStart hook
-# Verifies bd (beads) is available and shows active work
+# ~/.forge/hooks/session-start.sh — SessionStart hook
+# Loads forge context and shows active work
 
-# Check that bd is available
-if ! command -v bd &>/dev/null; then
-	echo "[forge] Warning: bd (beads) is not installed. Work tracking requires bd."
-	echo "[forge] Install with: brew install beads"
+# Check that forge CLI is available
+if ! command -v forge &>/dev/null; then
 	exit 0
 fi
 
-# Check that forge.yaml exists
-if [ ! -f "forge.yaml" ]; then
+# Resolve project paths
+PATHS_JSON=$(forge paths 2>/dev/null)
+if [ -z "$PATHS_JSON" ]; then
 	exit 0
 fi
 
-# Check that beads is initialized
-if [ ! -d ".beads" ]; then
-	echo "[forge] Beads not initialized. Initializing..."
-	bd init --quiet 2>/dev/null
+PROJECT_DIR=$(echo "$PATHS_JSON" | jq -r '.project_dir // empty')
+FORGE_YAML="${PROJECT_DIR}/forge.yaml"
+
+# Check if this project has been initialized with forge
+if [ ! -f "$FORGE_YAML" ]; then
+	echo "[forge] Project not initialized. Run: forge init"
+	exit 0
 fi
 
-# Show ready tasks
-READY=$(bd ready --json 2>/dev/null)
-if [ -n "$READY" ] && [ "$READY" != "[]" ]; then
-	COUNT=$(echo "$READY" | jq 'length' 2>/dev/null)
-	echo "[forge] ${COUNT} task(s) ready to work on:"
-	echo "$READY" | jq -r '.[] | "  \(.id) [P\(.priority)] \(.title)"' 2>/dev/null
-	echo "[forge] Claim one with: bd update <id> --claim"
-else
-	echo "[forge] No tasks ready. Start work with: /forge \"description\""
+# Output forge context for the agent
+echo "[forge] Pipeline ready. Available commands:"
+echo "  forge skill forge   — load the full /forge pipeline instructions"
+echo "  forge skill ingest  — load the /ingest spec decomposer"
+echo "  forge paths         — show resolved file paths"
+echo "  forge agent list    — show available agents"
+echo ""
+echo "[forge] To run the pipeline: read the output of 'forge skill forge' and follow it."
+
+# Check that bd is available for task tracking
+if command -v bd &>/dev/null; then
+	# Initialize beads in stealth mode if not already done
+	if [ ! -d ".beads" ]; then
+		bd init --stealth --skip-agents --skip-hooks --server --quiet 2>/dev/null
+		bd dolt start 2>/dev/null
+	fi
+
+	# Show ready tasks
+	READY=$(bd ready --json 2>/dev/null)
+	if [ -n "$READY" ] && [ "$READY" != "[]" ]; then
+		COUNT=$(echo "$READY" | jq 'length' 2>/dev/null)
+		echo "[forge] ${COUNT} task(s) ready to work on:"
+		echo "$READY" | jq -r '.[] | "  \(.id) [P\(.priority)] \(.title)"' 2>/dev/null
+		echo "[forge] Claim one with: bd update <id> --claim"
+	fi
 fi
 
 exit 0

@@ -4,7 +4,18 @@
 # Source this file: source .forge/pipeline/helpers.sh
 
 FORGE_DIR="${FORGE_DIR:-.forge}"
-CONFIG_FILE="${FORGE_DIR}/forge.yaml"
+FORGE_GLOBAL="${FORGE_GLOBAL:-$HOME/.forge}"
+
+# Resolve forge.yaml: check project root first, then ~/.forge/projects/<id>/
+if [[ -f "forge.yaml" ]]; then
+  CONFIG_FILE="${CONFIG_FILE:-forge.yaml}"
+elif command -v forge &>/dev/null; then
+  _PROJECT_DIR=$(forge paths 2>/dev/null | jq -r '.project_dir // empty')
+  if [[ -n "$_PROJECT_DIR" && -f "${_PROJECT_DIR}/forge.yaml" ]]; then
+    CONFIG_FILE="${CONFIG_FILE:-${_PROJECT_DIR}/forge.yaml}"
+  fi
+fi
+CONFIG_FILE="${CONFIG_FILE:-forge.yaml}"
 
 # --- bd helpers ---
 

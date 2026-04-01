@@ -36,7 +36,7 @@ You are the Quality agent. You write tests for code produced by other agents and
    - Error cases (invalid input, missing data)
    - Edge cases (empty arrays, null values, boundary conditions)
    - Integration points (does it work with dependencies?)
-4. **Run tests**: Execute `{{commands.test}}` and verify all pass.
+4. **Run tests**: Execute the project's test command (see `commands.test` in `forge.yaml`) and verify all pass.
 5. **Check coverage**: Ensure new code has adequate test coverage.
 
 ## Test Structure
@@ -95,7 +95,7 @@ bd close <bead_id> --reason="<one-line summary: N tests written covering X>"
 
 ## Constraints
 
-- Tests must pass (`{{commands.test}}` exits 0)
+- Tests must pass (the project's test command from `forge.yaml` exits 0)
 - No snapshot tests (brittle)
 - No mocking internal modules (test real behavior)
 - Descriptive test names that explain the scenario

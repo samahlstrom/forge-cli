@@ -5,7 +5,8 @@
 set -euo pipefail
 
 FORGE_DIR=".forge"
-source "${FORGE_DIR}/pipeline/helpers.sh"
+FORGE_GLOBAL="${FORGE_GLOBAL:-$HOME/.forge}"
+source "${FORGE_GLOBAL}/pipeline/helpers.sh"
 
 TASK_ID="${1:-}"
 

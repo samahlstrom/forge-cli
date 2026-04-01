@@ -11,6 +11,7 @@ import (
 
 	"github.com/samahlstrom/forge-cli/internal/detect"
 	"github.com/samahlstrom/forge-cli/internal/render"
+	"github.com/samahlstrom/forge-cli/internal/resolve"
 	"github.com/samahlstrom/forge-cli/internal/static"
 	"github.com/samahlstrom/forge-cli/internal/ui"
 	"github.com/samahlstrom/forge-cli/internal/util"
@@ -624,111 +625,86 @@ func generateHarness(cwd string, detected detect.DetectedStack, answers initAnsw
 	var files []generatedFile
 	hashes := util.HashManifest{Version: static.Version, Files: map[string]string{}}
 
-	projectType := answers.projectType
-	needsFrontend := projectType == "web-app" || projectType == "fullstack"
-	needsBackend := projectType == "web-app" || projectType == "api" || projectType == "fullstack" || projectType == "microservices"
-
-	// Define all files to generate: [templatePath, outputPath]
-	fileMap := [][2]string{
-		{"core/forge.yaml.hbs", "forge.yaml"},
-		{"core/CLAUDE.md.hbs", "CLAUDE.md"},
-		{"core/settings.json.hbs", ".claude/settings.json"},
-		{"core/skill-forge.md.hbs", ".claude/skills/forge/SKILL.md"},
-		{"core/skill-creator.md.hbs", ".claude/skills/skill-creator/SKILL.md"},
-		{"core/skill-ingest.md.hbs", ".claude/skills/ingest/SKILL.md"},
-		{"core/pipeline/helpers.sh.hbs", ".forge/pipeline/helpers.sh"},
-		{"core/pipeline/intake.sh.hbs", ".forge/pipeline/intake.sh"},
-		{"core/pipeline/classify.md.hbs", ".forge/pipeline/classify.md"},
-		{"core/pipeline/review-plan.md.hbs", ".forge/pipeline/review-plan.md"},
-		{"core/pipeline/verify.sh.hbs", ".forge/pipeline/verify.sh"},
-		{"core/pipeline/deliver.sh.hbs", ".forge/pipeline/deliver.sh"},
-		{"core/agents/architect.md.hbs", ".forge/agents/architect.md"},
-		{"core/agents/quality.md.hbs", ".forge/agents/quality.md"},
-		{"core/agents/security.md.hbs", ".forge/agents/security.md"},
-		{"core/agents/edgar.md.hbs", ".forge/agents/edgar.md"},
-		{"core/agents/code-quality.md.hbs", ".forge/agents/code-quality.md"},
-		{"core/agents/um-actually.md.hbs", ".forge/agents/um-actually.md"},
-		{"core/agents/visual-qa.md.hbs", ".forge/agents/visual-qa.md"},
-		{"core/pipeline/browser-smoke.sh.hbs", ".forge/pipeline/browser-smoke.sh"},
-		{"core/context/project.md.hbs", ".forge/context/project.md"},
-		{"core/hooks/pre-edit.sh.hbs", ".forge/hooks/pre-edit.sh"},
-		{"core/hooks/post-edit.sh.hbs", ".forge/hooks/post-edit.sh"},
-		{"core/hooks/session-start.sh.hbs", ".forge/hooks/session-start.sh"},
+	// Auto-bootstrap ~/.forge/ if not already set up
+	if !resolve.IsGlobalSetup() {
+		ui.Log.Step("First run — bootstrapping personal forge library...")
+		if _, err := bootstrapGlobal(resolve.ForgeHome(), false); err != nil {
+			return nil, fmt.Errorf("failed to bootstrap ~/.forge/: %w", err)
+		}
+		ui.Log.Success(fmt.Sprintf("Personal library created at %s", resolve.ForgeHome()))
 	}
 
-	if needsFrontend {
-		fileMap = append(fileMap, [2]string{"core/agents/frontend.md.hbs", ".forge/agents/frontend.md"})
-	}
-	if needsBackend {
-		fileMap = append(fileMap, [2]string{"core/agents/backend.md.hbs", ".forge/agents/backend.md"})
+	// ZERO project footprint — all files go to ~/.forge/projects/<id>/ or ~/.claude/
+	projectDir := resolve.ProjectDir(cwd)
+	contextDir := resolve.ProjectContextDir(cwd)
+	runsDir := resolve.ProjectRunsDir(cwd)
+	projectID := resolve.ProjectID(cwd)
+
+	_ = util.EnsureDir(contextDir)
+	_ = util.EnsureDir(runsDir)
+
+	// Project-specific files written to ~/.forge/projects/<id>/
+	type projectFile struct {
+		templateRel string
+		outputPath  string
+		label       string // display name
+		userOwned   bool   // skip if exists
 	}
 
-	// Preset stack context
 	presetTemplatePath := fmt.Sprintf("presets/%s/stack.md.hbs", answers.preset)
-	fileMap = append(fileMap, [2]string{presetTemplatePath, ".forge/context/stack.md"})
 
-	for _, pair := range fileMap {
-		templateRel := pair[0]
-		outputRel := pair[1]
+	projectFiles := []projectFile{
+		{"core/forge.yaml.hbs", filepath.Join(projectDir, "forge.yaml"), "forge.yaml", true},
+		{"core/context/project.md.hbs", filepath.Join(contextDir, "project.md"), "context/project.md", true},
+		{presetTemplatePath, filepath.Join(contextDir, "stack.md"), "context/stack.md", false},
+	}
 
-		var content string
-
-		templateData, err := fs.ReadFile(static.TemplatesFS, filepath.Join("templates", templateRel))
+	for _, pf := range projectFiles {
+		templateData, err := fs.ReadFile(static.TemplatesFS, filepath.Join("templates", pf.templateRel))
 		if err != nil {
-			// Template doesn't exist yet — write a placeholder
-			content = fmt.Sprintf("# %s\n\n> Template not yet created: %s\n> This file will be populated in a future phase.\n", outputRel, templateRel)
+			continue
+		}
+		content := render.Render(string(templateData), ctx)
+
+		if pf.userOwned && !initForce && util.Exists(pf.outputPath) {
+			ui.Log.Step(fmt.Sprintf("Kept existing %s (use --force to overwrite)", pf.label))
+			hashes.Files[pf.label] = util.HashContent(content)
+			continue
+		}
+
+		if err := util.WriteText(pf.outputPath, content); err != nil {
+			return nil, fmt.Errorf("failed to write %s: %w", pf.label, err)
+		}
+		files = append(files, generatedFile{relativePath: fmt.Sprintf("~/.forge/projects/%s/%s", projectID, pf.label), content: content})
+		hashes.Files[pf.label] = util.HashContent(content)
+	}
+
+	// Write project metadata for lookup
+	metadata := fmt.Sprintf("# Project: %s\npath: %s\npreset: %s\n", answers.projectName, cwd, answers.preset)
+	_ = util.WriteText(filepath.Join(projectDir, "metadata.yaml"), metadata)
+
+	// User-scope settings.json — write to ~/.claude/settings.json (NOT project)
+	settingsTemplate, err := fs.ReadFile(static.TemplatesFS, filepath.Join("templates", "core/settings.json.hbs"))
+	if err == nil {
+		settingsContent := render.Render(string(settingsTemplate), ctx)
+		userSettingsPath := filepath.Join(homeDir(), ".claude", "settings.json")
+		settingsContent = mergeSettingsJSON(userSettingsPath, settingsContent)
+		if err := util.WriteText(userSettingsPath, settingsContent); err != nil {
+			ui.Log.Warn(fmt.Sprintf("Could not write ~/.claude/settings.json: %v", err))
 		} else {
-			content = render.Render(string(templateData), ctx)
-		}
-
-		outputPath := filepath.Join(cwd, outputRel)
-
-		// Merge strategy for files that users may have customized
-		if outputRel == "CLAUDE.md" {
-			content = mergeCLAUDEmd(outputPath, content)
-		} else if outputRel == ".claude/settings.json" {
-			content = mergeSettingsJSON(outputPath, content)
-		} else if outputRel == "forge.yaml" || outputRel == ".forge/context/project.md" {
-			// User-editable config — skip if it already exists (preserve customizations).
-			// Use `forge upgrade` or `--force` to overwrite these files.
-			if !initForce && util.Exists(outputPath) {
-				ui.Log.Step(fmt.Sprintf("Kept existing %s (use --force to overwrite)", outputRel))
-				// Still track the hash of what we *would* have written for upgrade diffing
-				hashes.Files[outputRel] = util.HashContent(content)
-				continue
-			}
-		}
-
-		if err := util.WriteText(outputPath, content); err != nil {
-			return nil, fmt.Errorf("failed to write %s: %w", outputRel, err)
-		}
-		files = append(files, generatedFile{relativePath: outputRel, content: content})
-		hashes.Files[outputRel] = util.HashContent(content)
-
-		// Make shell scripts executable
-		if strings.HasSuffix(outputRel, ".sh") {
-			_ = os.Chmod(outputPath, 0o755)
+			files = append(files, generatedFile{relativePath: "~/.claude/settings.json", content: settingsContent})
 		}
 	}
 
-	// Generate agent roster from frontmatter
-	_ = generateRoster(cwd)
+	// User-scope skill stubs — write to ~/.claude/skills/ (NOT project)
+	// These are tiny loaders that point Claude to the forge CLI
+	installSkillStubs()
 
-	// Create empty directories
-	_ = util.EnsureDir(filepath.Join(cwd, ".forge", "addons"))
-	_ = util.EnsureDir(filepath.Join(cwd, ".forge", "state"))
-	_ = util.EnsureDir(filepath.Join(cwd, ".forge", "pipeline", "runs"))
-
-	// Write .gitkeep for state
-	_ = util.WriteText(filepath.Join(cwd, ".forge", "state", ".gitkeep"), "")
-
-	// Ensure .forge transient dirs are gitignored
-	gitignoreContent := "worktrees/\nstate/\npipeline/runs/\nspecs/*/reports/\n"
-	_ = util.WriteText(filepath.Join(cwd, ".forge", ".gitignore"), gitignoreContent)
-
-	// Write hash manifest
-	if err := util.WriteHashes(cwd, hashes); err != nil {
-		return nil, fmt.Errorf("failed to write hashes: %w", err)
+	// Write hash manifest to project dir (not the repo)
+	hashPath := filepath.Join(projectDir, ".hashes.json")
+	hashes.Version = static.Version
+	if hashData, err := json.MarshalIndent(hashes, "", "  "); err == nil {
+		_ = util.WriteText(hashPath, string(hashData))
 	}
 
 	// Initialize bd (beads) — best effort, not critical
@@ -909,6 +885,70 @@ Be concise. Infer from the code — do not ask questions. Return ONLY valid JSON
 
 // --- bd init ---
 
+// installSkillStubs writes tiny loader SKILL.md files to ~/.claude/skills/.
+// Claude Code discovers these natively. Each stub just tells Claude to run
+// the forge CLI to get the full skill content — the real logic lives in ~/.forge/.
+func installSkillStubs() {
+	stubs := map[string]string{
+		"forge": `# forge
+
+> Run the forge pipeline to deliver tracked work.
+
+## Trigger
+
+User runs /forge <description> or /forge --flag
+
+## Instructions
+
+Run this command and follow the instructions it outputs exactly:
+
+` + "```\nBash(\"forge skill forge\")\n```" + `
+
+That command outputs the full pipeline orchestrator. Read its output and execute every step.
+Before starting, also run:
+
+` + "```\nBash(\"forge paths\")\n```" + `
+
+This gives you all resolved directories (runs, context, agents, pipeline). Use those paths throughout.
+`,
+		"ingest": `# ingest
+
+> Parse a spec document into a structured project plan.
+
+## Trigger
+
+User runs /ingest <spec-id> or /ingest <file>
+
+## Instructions
+
+Run this command and follow the instructions it outputs exactly:
+
+` + "```\nBash(\"forge skill ingest\")\n```" + `
+
+That command outputs the full spec ingestion pipeline. Read its output and execute every step.
+`,
+	}
+
+	skillsDir := filepath.Join(homeDir(), ".claude", "skills")
+	for name, content := range stubs {
+		stubPath := filepath.Join(skillsDir, name, "SKILL.md")
+		// Don't overwrite if user has customized
+		if util.Exists(stubPath) {
+			continue
+		}
+		_ = util.EnsureDir(filepath.Dir(stubPath))
+		_ = util.WriteText(stubPath, content)
+	}
+}
+
+func homeDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return os.TempDir()
+	}
+	return home
+}
+
 func initBd(cwd string) {
 	// Best effort — bd is not critical
 	if !util.WhichExists("bd") {
@@ -919,9 +959,21 @@ func initBd(cwd string) {
 		}
 	}
 
-	_, _ = util.RunShell(cwd, 30*time.Second, "bd init --server --quiet")
+	// --stealth: uses .git/info/exclude so .beads/ is never committed
+	// --skip-agents: forge manages its own agent instructions
+	// --skip-hooks: forge manages its own hooks via ~/.claude/settings.json
+	_, _ = util.RunShell(cwd, 30*time.Second, "bd init --stealth --skip-agents --skip-hooks --server --quiet")
 	_, _ = util.RunShell(cwd, 15*time.Second, "bd dolt start")
-	_, _ = util.RunShell(cwd, 15*time.Second, "bd setup claude")
+
+	// Clean up any .gitignore beads created (stealth should use .git/info/exclude only)
+	beadsGitignore := filepath.Join(cwd, ".gitignore")
+	if util.Exists(beadsGitignore) {
+		content, _ := util.ReadText(beadsGitignore)
+		if strings.Contains(content, "Beads") && !strings.Contains(content, "\n\n") {
+			// The .gitignore was created by beads and contains only beads entries — remove it
+			_ = os.Remove(beadsGitignore)
+		}
+	}
 }
 
 // --- results display ---
@@ -936,11 +988,7 @@ func displayInitResults(files []generatedFile, specId string) {
 
 	ui.Log.Step("Next steps:")
 	ui.Log.Message("")
-	ui.Log.Message(fmt.Sprintf("  %s Commit the harness:", ui.Bold("1.")))
-	ui.Log.Message(fmt.Sprintf("     %s", ui.Dim("git add forge.yaml CLAUDE.md .claude .forge .beads")))
-	ui.Log.Message(fmt.Sprintf("     %s", ui.Dim(`git commit -m "forge: initialize agent harness"`)))
-	ui.Log.Message("")
-	ui.Log.Message(fmt.Sprintf("  %s Open Claude Code and tell your agent what to build:", ui.Bold("2.")))
+	ui.Log.Message(fmt.Sprintf("  %s Open Claude Code and tell your agent what to build:", ui.Bold("1.")))
 	if specId != "" {
 		ui.Log.Message(fmt.Sprintf("     %s  — decompose the spec into tasks", ui.Cyan(fmt.Sprintf("/ingest %s", specId))))
 		ui.Log.Message(fmt.Sprintf("     %s   — then start building", ui.Cyan(`/forge "first task from the plan"`)))
@@ -950,7 +998,8 @@ func displayInitResults(files []generatedFile, specId string) {
 	}
 	ui.Log.Message("")
 	ui.Log.Message(fmt.Sprintf("  %s", ui.Dim("Your agent handles everything from there — planning, coding, testing, and PR creation.")))
-	ui.Log.Message(fmt.Sprintf("  %s", ui.Dim("Review .forge/context/project.md if you want to add domain knowledge.")))
+	ui.Log.Message(fmt.Sprintf("  %s", ui.Dim("Nothing was written to the project — your workflow lives in ~/.forge/")))
+	ui.Log.Message(fmt.Sprintf("  %s", ui.Dim("Edit project context: forge paths | jq -r .context_dir")))
 	ui.Log.Message("")
 	ui.Log.Message(fmt.Sprintf("  %s", ui.Dim("Optional:")))
 	ui.Log.Message(fmt.Sprintf("    %s   — HIPAA security checks", ui.Dim("forge add compliance-hipaa")))

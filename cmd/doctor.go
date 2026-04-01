@@ -3,11 +3,13 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/samahlstrom/forge-cli/internal/ui"
-	"github.com/samahlstrom/forge-cli/internal/util"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/samahlstrom/forge-cli/internal/resolve"
+	"github.com/samahlstrom/forge-cli/internal/ui"
+	"github.com/samahlstrom/forge-cli/internal/util"
 
 	"github.com/spf13/cobra"
 )
@@ -56,11 +58,20 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		iff(!util.Exists(filepath.Join(cwd, "CLAUDE.md")), "Not found", ""),
 	})
 
-	// 3. Pipeline files
-	pipelineFiles := []string{"intake.sh", "classify.md", "decompose.md", "execute.md", "evaluate.md", "review-plan.md", "verify.sh", "deliver.sh"}
+	// 3. Global library (~/.forge/)
+	globalHome := resolve.ForgeHome()
+	globalSetup := resolve.IsGlobalSetup()
+	checks = append(checks, check{
+		"~/.forge/ library",
+		globalSetup,
+		iff(!globalSetup, "Not found. Run `forge setup`", globalHome),
+	})
+
+	// 4. Pipeline files (check global, then local override)
+	pipelineFiles := []string{"intake.sh", "classify.md", "review-plan.md", "verify.sh", "deliver.sh", "helpers.sh"}
 	pipelineMissing := 0
 	for _, f := range pipelineFiles {
-		if !util.Exists(filepath.Join(cwd, ".forge", "pipeline", f)) {
+		if resolve.ResolvePipeline(cwd, f) == "" {
 			pipelineMissing++
 		}
 	}
@@ -70,45 +81,35 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		iff(pipelineMissing > 0, fmt.Sprintf("%d missing", pipelineMissing), fmt.Sprintf("%d files OK", len(pipelineFiles))),
 	})
 
-	// 4. Scripts executable
+	// 5. Scripts executable
 	nonExec := 0
 	for _, f := range pipelineFiles {
 		if strings.HasSuffix(f, ".sh") {
-			path := filepath.Join(cwd, ".forge", "pipeline", f)
-			if !isExecutable(path) {
+			path := resolve.ResolvePipeline(cwd, f)
+			if path != "" && !isExecutable(path) {
 				nonExec++
 			}
 		}
 	}
 	for _, f := range []string{"pre-edit.sh", "post-edit.sh", "session-start.sh"} {
-		path := filepath.Join(cwd, ".forge", "hooks", f)
-		if !isExecutable(path) {
+		path := resolve.ResolveHook(cwd, f)
+		if path != "" && !isExecutable(path) {
 			nonExec++
 		}
 	}
 	checks = append(checks, check{
 		"Scripts executable",
 		nonExec == 0,
-		iff(nonExec > 0, fmt.Sprintf("%d not executable. Run: chmod +x .forge/pipeline/*.sh .forge/hooks/*.sh", nonExec), "All executable"),
+		iff(nonExec > 0, fmt.Sprintf("%d not executable. Run: chmod +x ~/.forge/pipeline/*.sh ~/.forge/hooks/*.sh", nonExec), "All executable"),
 	})
 
-	// 5. Agent definitions
-	if util.Exists(forgeYAML) {
-		var config map[string]any
-		_ = util.ReadYAML(forgeYAML, &config)
-		agents := toStringSlice(config["agents"])
-		agentsMissing := 0
-		for _, a := range agents {
-			if !util.Exists(filepath.Join(cwd, ".forge", "agents", a+".md")) {
-				agentsMissing++
-			}
-		}
-		checks = append(checks, check{
-			"Agent definitions",
-			agentsMissing == 0,
-			iff(agentsMissing > 0, fmt.Sprintf("%d missing", agentsMissing), fmt.Sprintf("%d agents OK", len(agents))),
-		})
-	}
+	// 6. Agent definitions (check global + local)
+	agentInfos := resolve.ListAgents(cwd)
+	checks = append(checks, check{
+		"Agent definitions",
+		len(agentInfos) > 0,
+		iff(len(agentInfos) == 0, "No agents found. Run `forge setup`", fmt.Sprintf("%d agents available", len(agentInfos))),
+	})
 
 	// 6. Context files
 	checks = append(checks, check{"context/stack.md", util.Exists(filepath.Join(cwd, ".forge", "context", "stack.md")), ""})

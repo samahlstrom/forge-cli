@@ -18,8 +18,9 @@
 
 **Before your first `/forge` run**, read these files to understand the project:
 - `forge.yaml` — project configuration and verification commands
-- `.forge/context/stack.md` — stack-specific conventions ({{project.preset}})
-- `.forge/context/project.md` — project-specific knowledge and domain rules
+- Run `forge paths` to find your project's context files (stack conventions, project knowledge)
+
+**Forge uses a personal library** at `~/.forge/` for agents, pipeline scripts, and skills. Nothing is committed to the project — all forge state lives in `~/.forge/`.
 
 ## Project
 
@@ -72,9 +73,9 @@ All code must pass before delivery:
 
 ### Tri-Agent Evaluation (scored, 0.0–1.0)
 Three independent evaluator agents review every implementation after mechanical checks pass:
-- **Edgar** (`.forge/agents/edgar.md`) — Adversarial edge case analysis. Finds what will break in production: robustness, error handling, security surface, brittleness.
-- **Code Quality** (`.forge/agents/code-quality.md`) — Architecture fit, maintainability, performance, correctness beyond what tests catch.
-- **Um-Actually** (`.forge/agents/um-actually.md`) — Cross-references implementation against official documentation, framework conventions, and known pitfalls.
+- **Edgar** (`~/.forge/agents/edgar.md`) — Adversarial edge case analysis. Finds what will break in production: robustness, error handling, security surface, brittleness.
+- **Code Quality** (`~/.forge/agents/code-quality.md`) — Architecture fit, maintainability, performance, correctness beyond what tests catch.
+- **Um-Actually** (`~/.forge/agents/um-actually.md`) — Cross-references implementation against official documentation, framework conventions, and known pitfalls.
 
 Composite score = (Edgar * 0.35) + (Code Quality * 0.35) + (Um-Actually * 0.30). Must reach 0.7 to pass. If below threshold, the pipeline generates a revision brief and loops back to execution (max 3 iterations).
 
@@ -93,7 +94,7 @@ Do NOT introduce these — verification will reject them:
 
 Available agents for subtask assignment:
 {{#each agents}}
-- `{{this}}` — see `.forge/agents/{{this}}.md`
+- `{{this}}` — see `~/.forge/agents/{{this}}.md`
 {{/each}}
 
 ## Task Tracking (bd)

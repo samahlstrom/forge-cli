@@ -11,8 +11,10 @@
 			"Bash(npx *)",
 			"Bash(git *)",
 			"Bash(gh *)",
+			"Bash(bash ~/.forge/*)",
 			"Bash(bash .forge/*)",
 			"Bash(bd *)",
+			"Bash(source ~/.forge/*)",
 			"Bash(source .forge/*)",
 			"Bash(ls *)",
 			"Bash(mkdir *)",
@@ -40,7 +42,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "bash .forge/hooks/session-start.sh",
+						"command": "bash ~/.forge/hooks/session-start.sh",
 						"timeout": 10000
 					}
 				]
@@ -52,7 +54,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "bash .forge/hooks/pre-edit.sh",
+						"command": "bash ~/.forge/hooks/pre-edit.sh",
 						"timeout": 5000
 					}
 				]
@@ -64,7 +66,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "bash .forge/hooks/post-edit.sh",
+						"command": "bash ~/.forge/hooks/post-edit.sh",
 						"timeout": 5000
 					}
 				]
