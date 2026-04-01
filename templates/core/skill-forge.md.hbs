@@ -99,7 +99,7 @@ All other modes proceed through full decomposition and review.
 
 Dispatch TWO agents in parallel (single message, two Agent tool calls):
 
-**Agent 1 — Architect:**
+**Agent 1 — Architect (model: sonnet):**
 ```
 "You are the Architect agent. Read and follow .forge/agents/architect.md.
 Task: bd show <task_id>
@@ -116,7 +116,7 @@ Assign each subtask to one of these agents based on what the subtask does.
 Follow the Agent Contract: OPEN → WORK → REPORT → CLOSE."
 ```
 
-**Agent 2 — Security:**
+**Agent 2 — Security (model: sonnet):**
 ```
 "You are the Security agent. Read and follow .forge/agents/security.md.
 Task: bd show <task_id>
@@ -136,7 +136,7 @@ After both return:
 Dispatch the plan reviewer:
 
 ```
-Agent: "You are the Plan Reviewer. Read and follow .forge/pipeline/review-plan.md.
+Agent (model: sonnet): "You are the Plan Reviewer. Read and follow .forge/pipeline/review-plan.md.
 Review the decomposition at .forge/pipeline/runs/<task_id>/decomposition.json.
 Read context: .forge/context/stack.md, .forge/context/project.md.
 Write your review JSON to .forge/pipeline/runs/<task_id>/plan-review.json.
@@ -156,10 +156,10 @@ Read `decomposition.json`. Extract `waves[]` and `subtasks[]`.
 **For each wave in order:**
 
 1. Read the wave's subtask IDs
-2. For EACH subtask in the wave, spawn an agent with `isolation: "worktree"` — all subtasks in the same wave in a SINGLE message (parallel):
+2. For EACH subtask in the wave, spawn an agent with `isolation: "worktree"`, `model: "sonnet"` — all subtasks in the same wave in a SINGLE message (parallel):
 
 ```
-Agent (per subtask, isolation: "worktree"):
+Agent (per subtask, isolation: "worktree", model: "sonnet"):
 "You are a <assigned_agent> agent working on bead <bead_id>.
 Read and follow .forge/agents/<assigned_agent>.md.
 
@@ -186,7 +186,16 @@ When complete:
 3. Close your bead: bd close <bead_id> --reason='<summary>'"
 ```
 
-3. After ALL subtasks in the wave return, run the wave gate:
+3. After ALL subtasks in the wave return, merge and clean up each worktree:
+   - Each agent result includes a `worktree_path` and `branch`. For each:
+     ```
+     Bash("git merge <branch> --no-edit")
+     Bash("git worktree remove <worktree_path>")
+     Bash("git branch -d <branch>")
+     ```
+   - If merge conflicts occur, resolve them before proceeding.
+
+4. Run the wave gate:
    ```
    Bash("{{commands.typecheck}}")
    ```
@@ -195,12 +204,12 @@ When complete:
    Bash("{{commands.test}}")
    ```
 
-4. If the gate fails:
+5. If the gate fails:
    - Read error output to identify which subtask's files caused the failure
    - Retry that subtask ONCE with the error output as additional context
    - If retry fails: `Bash("git checkout -- <files>")` to revert, mark subtask as deferred, continue
 
-5. After ALL waves complete, read all reports from `.forge/pipeline/runs/<task_id>/reports/`:
+6. After ALL waves complete, read all reports from `.forge/pipeline/runs/<task_id>/reports/`:
    - Compile `execution.json`: status, waves_executed, subtasks_completed, subtasks_deferred, files_modified, verification results
    - Compile `agent-log.json`: every agent's report, successes, failures, improvements
 
@@ -229,7 +238,7 @@ Bash("git diff HEAD~1 > .forge/pipeline/runs/<task_id>/eval-<iteration>-diff.pat
 
 Dispatch THREE evaluators in parallel (single message, three Agent tool calls):
 
-**Agent 1 — Edgar:**
+**Agent 1 — Edgar (model: sonnet):**
 ```
 "You are Edgar. Read and follow .forge/agents/edgar.md.
 Evaluate the diff at .forge/pipeline/runs/<task_id>/eval-<iteration>-diff.patch.
@@ -239,9 +248,9 @@ Write your JSON report to .forge/pipeline/runs/<task_id>/reports/eval-<iteration
 Follow the Agent Contract: OPEN → WORK → REPORT → CLOSE."
 ```
 
-**Agent 2 — Code Quality:** (same pattern, reads `code-quality.md`, writes `eval-<iteration>-code-quality.json`)
+**Agent 2 — Code Quality (model: sonnet):** (same pattern, reads `code-quality.md`, writes `eval-<iteration>-code-quality.json`)
 
-**Agent 3 — Um-Actually:** (same pattern, reads `um-actually.md`, writes `eval-<iteration>-um-actually.json`)
+**Agent 3 — Um-Actually (model: sonnet):** (same pattern, reads `um-actually.md`, writes `eval-<iteration>-um-actually.json`)
 
 ## Step 10: Aggregate + Verdict
 
