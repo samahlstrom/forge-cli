@@ -37,28 +37,46 @@ make install
 ## Quick start
 
 ```bash
-forge setup       # One-time: clone the toolkit to ~/.forge/
-forge init        # Per-project: symlink skills into .claude/skills/
+forge setup       # One-time: creates your personal toolkit at ~/.forge/
+forge init        # Per-project: symlinks skills into .claude/skills/
 forge list        # See your agents and skills
 ```
 
-After setup, your toolkit lives at `~/.forge/`. Running `forge init` in any project symlinks skills into `.claude/skills/` so they're available as slash commands (`/forge`, `/ingest`, `/skill-creator`). Since they're symlinks, `forge sync` updates them everywhere automatically.
+`forge setup` creates `~/.forge/` with starter agents, skills, and pipeline scripts — all as a local git repo. Run `forge init` in any project to wire your skills in as Claude Code slash commands.
+
+### Sync across machines
+
+Your toolkit is a git repo. Add a remote to take it anywhere:
+
+```bash
+cd ~/.forge
+git remote add origin <your-repo-url>
+git push -u origin main
+```
+
+On another machine:
+
+```bash
+git clone <your-repo-url> ~/.forge
+```
+
+Or if you already ran `forge setup` there, use `forge sync` to pull updates.
 
 ## Commands
 
 | Command | Description |
 |---|---|
-| `forge setup` | One-time install — clones the toolkit to `~/.forge/` |
+| `forge setup` | One-time — creates your toolkit at `~/.forge/` |
 | `forge init` | Per-project — symlinks skills into `.claude/skills/` |
-| `forge sync` | Pull the latest tools from the forge repo |
+| `forge sync` | Pull the latest from your toolkit's remote |
 | `forge list` | List all agents and skills in your toolkit |
 | `forge agent list` | List agents |
 | `forge agent show <name>` | Print an agent's full definition |
-| `forge agent add <name>` | Create a new agent (commits and pushes to your forge repo) |
+| `forge agent add <name>` | Create a new agent |
 | `forge agent edit <name>` | Open an agent in your `$EDITOR` |
 | `forge skill list` | List skills |
 | `forge skill show <name>` | Print a skill's full definition |
-| `forge skill add <name>` | Create a new skill (commits and pushes to your forge repo) |
+| `forge skill add <name>` | Create a new skill |
 | `forge skill edit <name>` | Open a skill in your `$EDITOR` |
 | `forge paths` | Print resolved toolkit paths as JSON |
 
@@ -66,9 +84,9 @@ After setup, your toolkit lives at `~/.forge/`. Running `forge init` in any proj
 
 Forge manages a personal library of markdown-based tools that Claude Code uses at runtime:
 
-- **Agents** (`~/.forge/library/agents/`) — specialist agent definitions (architect, backend, frontend, quality, security, evaluators, etc.) that the pipeline dispatches as subagents
-- **Skills** (`~/.forge/library/skills/`) — Claude Code slash commands (`/forge`, `/ingest`, `/skill-creator`) that orchestrate multi-step workflows
-- **Pipeline** (`~/.forge/library/pipeline/`) — shell scripts and prompt templates used by the `/forge` skill to run intake, classification, verification, and delivery
+- **Agents** (`~/.forge/agents/`) — specialist agent definitions (architect, backend, frontend, quality, security, evaluators, etc.) that the pipeline dispatches as subagents
+- **Skills** (`~/.forge/skills/`) — Claude Code slash commands (`/forge`, `/ingest`, `/skill-creator`) that orchestrate multi-step workflows
+- **Pipeline** (`~/.forge/pipeline/`) — shell scripts and prompt templates used by the `/forge` skill to run intake, classification, verification, and delivery
 
 ### The `/forge` skill
 
@@ -96,20 +114,29 @@ forge agent add my-agent --body '# my-agent\n\nDoes something useful.'
 # Add a new skill
 forge skill add my-skill --body '---\nname: my-skill\n---\n\n# my-skill\n\nDoes something useful.'
 
-# Both are committed to your forge repo and available everywhere after sync
-forge sync
+# Both are committed to your toolkit repo automatically
 ```
 
 ## Toolkit structure
 
 ```
-~/.forge/
-├── library/
-│   ├── agents/          # Agent definitions (.md)
-│   ├── skills/          # Skill definitions (SKILL.md per skill)
-│   └── pipeline/        # Pipeline scripts and prompts
-├── repo/                # Git clone of forge-cli
-└── config.yaml          # Local configuration
+~/.forge/                  # A git repo — your personal toolkit
+├── agents/                # Agent definitions (.md)
+│   ├── architect.md
+│   ├── backend.md
+│   ├── frontend.md
+│   ├── quality.md
+│   ├── security.md
+│   └── ...
+├── skills/                # Skill definitions (SKILL.md per skill)
+│   ├── forge/SKILL.md
+│   ├── ingest/SKILL.md
+│   └── skill-creator/SKILL.md
+└── pipeline/              # Pipeline scripts and prompts
+    ├── intake.sh
+    ├── classify.md
+    ├── verify.sh
+    └── deliver.sh
 ```
 
 ## Requirements

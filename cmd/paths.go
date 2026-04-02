@@ -19,8 +19,6 @@ func init() {
 func runPaths(_ *cobra.Command, _ []string) error {
 	paths := map[string]string{
 		"forge_home":   resolve.ForgeHome(),
-		"library_dir":  resolve.LibraryDir(),
-		"repo_dir":     resolve.RepoDir(),
 		"agents_dir":   resolve.AgentsDir(),
 		"skills_dir":   resolve.SkillsDir(),
 		"pipeline_dir": resolve.PipelineDir(),

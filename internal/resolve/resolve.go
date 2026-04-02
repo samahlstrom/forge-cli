@@ -31,49 +31,37 @@ func ForgeHome() string {
 	return filepath.Join(home, ".forge")
 }
 
-// LibraryDir returns the library content directory inside ~/.forge/.
-// Supports both layouts:
-//   - New: ~/.forge/library/ (symlink to repo/library/)
-//   - Flat: ~/.forge/ (files copied directly)
-func LibraryDir() string {
-	lib := filepath.Join(ForgeHome(), "library")
-	if info, err := os.Stat(lib); err == nil && info.IsDir() {
-		return lib
-	}
-	// Fall back to flat layout where agents/skills live directly in forge home
-	return ForgeHome()
-}
-
-// IsSetup returns true if the agents directory exists in either layout.
+// IsSetup returns true if ~/.forge/ has been initialized.
 func IsSetup() bool {
 	info, err := os.Stat(AgentsDir())
 	return err == nil && info.IsDir()
 }
 
-// RepoDir returns the path to the forge-cli source repo clone inside ~/.forge/.
-func RepoDir() string {
-	return filepath.Join(ForgeHome(), "repo")
+// IsGitRepo returns true if ~/.forge/ is a git repository.
+func IsGitRepo() bool {
+	info, err := os.Stat(filepath.Join(ForgeHome(), ".git"))
+	return err == nil && info.IsDir()
 }
 
-// IsRepoCloned returns true if the forge repo is cloned.
-func IsRepoCloned() bool {
-	info, err := os.Stat(filepath.Join(RepoDir(), ".git"))
-	return err == nil && info.IsDir()
+// HasRemote returns true if ~/.forge/ git repo has a remote configured.
+func HasRemote() bool {
+	entries, err := os.ReadDir(filepath.Join(ForgeHome(), ".git", "refs", "remotes"))
+	return err == nil && len(entries) > 0
 }
 
 // AgentsDir returns the path to the agents directory.
 func AgentsDir() string {
-	return filepath.Join(LibraryDir(), "agents")
+	return filepath.Join(ForgeHome(), "agents")
 }
 
 // SkillsDir returns the path to the skills directory.
 func SkillsDir() string {
-	return filepath.Join(LibraryDir(), "skills")
+	return filepath.Join(ForgeHome(), "skills")
 }
 
 // PipelineDir returns the path to the pipeline directory.
 func PipelineDir() string {
-	return filepath.Join(LibraryDir(), "pipeline")
+	return filepath.Join(ForgeHome(), "pipeline")
 }
 
 // ResolveAgent finds an agent by name. Returns empty string if not found.
@@ -94,7 +82,7 @@ func ResolveSkill(name string) string {
 	return ""
 }
 
-// ListAgents returns all agents in the library.
+// ListAgents returns all agents in the toolkit.
 func ListAgents() []AgentInfo {
 	dir := AgentsDir()
 	entries, err := os.ReadDir(dir)
@@ -115,7 +103,7 @@ func ListAgents() []AgentInfo {
 	return agents
 }
 
-// ListSkills returns all skills in the library.
+// ListSkills returns all skills in the toolkit.
 func ListSkills() []SkillInfo {
 	dir := SkillsDir()
 	entries, err := os.ReadDir(dir)

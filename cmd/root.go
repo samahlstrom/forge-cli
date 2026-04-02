@@ -18,8 +18,8 @@ Your personal library of agents, skills, and workflows.
 Take it anywhere, use it in any project, add to it anytime.
 
 Getting started:
-  forge setup       Install your toolkit to ~/.forge/
-  forge sync        Pull latest tools from the forge repo
+  forge setup       Create your personal toolkit at ~/.forge/
+  forge init        Wire skills into the current project
   forge list        See everything in your toolkit
 
 Managing tools:
@@ -30,8 +30,8 @@ Managing tools:
   forge skill add <name>        Add a new skill
   forge skill edit <name>       Edit an existing skill
 
-Your toolkit lives in ~/.forge/ — a git clone of your forge repo.
-Claude Code reads from it at runtime. Zero footprint in your projects.`,
+Your toolkit lives in ~/.forge/ — a git repo you own.
+Add a remote to sync across machines. Zero footprint in your projects.`,
 }
 
 func Execute() {

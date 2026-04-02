@@ -44,7 +44,7 @@ func init() {
 
 	addCmd := &cobra.Command{
 		Use:   "add [name]",
-		Short: "Add a new agent to your toolkit (commits + pushes to forge repo)",
+		Short: "Add a new agent to your toolkit",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runAgentAdd,
 	}
@@ -125,37 +125,10 @@ func runAgentAdd(_ *cobra.Command, args []string) error {
 
 	ui.Log.Success(fmt.Sprintf("Created %s", agentPath))
 
-	// Commit and push to the forge repo
-	repoDir := resolve.RepoDir()
-	if !resolve.IsRepoCloned() {
-		ui.Log.Info("Agent created locally. Run 'forge setup' to enable sync across machines.")
-		return nil
-	}
-
-	relPath := filepath.Join("library", "agents", name+".md")
-	gitAdd := exec.Command("git", "-C", repoDir, "add", relPath)
-	if err := gitAdd.Run(); err != nil {
-		ui.Log.Warn("Failed to stage — commit manually.")
-		return nil
-	}
-
-	gitCommit := exec.Command("git", "-C", repoDir, "commit", "-m", fmt.Sprintf("feat: add %s agent", name))
-	gitCommit.Stdout = os.Stdout
-	gitCommit.Stderr = os.Stderr
-	if err := gitCommit.Run(); err != nil {
-		ui.Log.Warn("Failed to commit — commit manually.")
-		return nil
-	}
-
-	gitPush := exec.Command("git", "-C", repoDir, "push")
-	gitPush.Stdout = os.Stdout
-	gitPush.Stderr = os.Stderr
-	if err := gitPush.Run(); err != nil {
-		ui.Log.Warn("Committed locally but push failed — run 'git -C " + repoDir + " push' when online.")
-		return nil
-	}
-
-	ui.Log.Success("Agent committed and pushed — available on all machines after 'forge sync'.")
+	commitAndPush(
+		filepath.Join("agents", name+".md"),
+		fmt.Sprintf("feat: add %s agent", name),
+	)
 	return nil
 }
 

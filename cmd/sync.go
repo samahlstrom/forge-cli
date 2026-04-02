@@ -14,20 +14,28 @@ import (
 func init() {
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "sync",
-		Short: "Pull the latest tools from the forge repo",
+		Short: "Pull the latest from your toolkit's remote",
 		RunE:  runSync,
 	})
 }
 
 func runSync(_ *cobra.Command, _ []string) error {
-	if !resolve.IsRepoCloned() {
-		return fmt.Errorf("forge not set up — run 'forge setup' first")
+	if !resolve.IsSetup() {
+		return fmt.Errorf("toolkit not found — run 'forge setup' first")
 	}
 
-	repoDir := resolve.RepoDir()
-	ui.Log.Step("Pulling latest...")
+	home := resolve.ForgeHome()
 
-	cmd := exec.Command("git", "-C", repoDir, "pull", "--ff-only")
+	if !resolve.IsGitRepo() {
+		return fmt.Errorf("%s is not a git repo — run 'git -C %s init' first", home, home)
+	}
+
+	if !resolve.HasRemote() {
+		return fmt.Errorf("no remote configured — add one with:\n  cd %s && git remote add origin <your-repo-url>", home)
+	}
+
+	ui.Log.Step("Pulling latest...")
+	cmd := exec.Command("git", "-C", home, "pull", "--ff-only")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
