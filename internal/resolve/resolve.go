@@ -1,8 +1,6 @@
 package resolve
 
 import (
-	"crypto/sha256"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,9 +8,14 @@ import (
 
 // AgentInfo holds metadata about a discovered agent.
 type AgentInfo struct {
-	Name   string // agent name (e.g. "architect")
-	Path   string // absolute path to the .md file
-	Global bool   // true if from ~/.forge/, false if local override
+	Name string
+	Path string
+}
+
+// SkillInfo holds metadata about a discovered skill.
+type SkillInfo struct {
+	Name string
+	Path string
 }
 
 // ForgeHome returns the global forge directory. Respects FORGE_HOME env var
@@ -28,163 +31,103 @@ func ForgeHome() string {
 	return filepath.Join(home, ".forge")
 }
 
-// IsGlobalSetup returns true if ~/.forge/ exists and contains at minimum
-// an agents/ directory (indicating setup has been run).
-func IsGlobalSetup() bool {
-	info, err := os.Stat(filepath.Join(ForgeHome(), "agents"))
+// LibraryDir returns the library content directory inside ~/.forge/.
+func LibraryDir() string {
+	return filepath.Join(ForgeHome(), "library")
+}
+
+// IsSetup returns true if ~/.forge/library/agents/ exists.
+func IsSetup() bool {
+	info, err := os.Stat(filepath.Join(LibraryDir(), "agents"))
 	return err == nil && info.IsDir()
 }
 
-// GlobalDir returns ~/.forge/<subpath>.
-func GlobalDir(subpath string) string {
-	return filepath.Join(ForgeHome(), subpath)
+// RepoDir returns the path to the forge-cli source repo clone inside ~/.forge/.
+func RepoDir() string {
+	return filepath.Join(ForgeHome(), "repo")
 }
 
-// ResolveFile checks for a file at .forge/<relPath> in cwd first (local override),
-// then at ~/.forge/<relPath> (global). Returns the absolute path of the first
-// found, or empty string if neither exists.
-func ResolveFile(cwd, relPath string) string {
-	local := filepath.Join(cwd, ".forge", relPath)
-	if fileExists(local) {
-		return local
-	}
-	global := filepath.Join(ForgeHome(), relPath)
-	if fileExists(global) {
-		return global
-	}
-	return ""
+// IsRepoCloned returns true if the forge repo is cloned.
+func IsRepoCloned() bool {
+	info, err := os.Stat(filepath.Join(RepoDir(), ".git"))
+	return err == nil && info.IsDir()
 }
 
-// ResolveAgent resolves an agent definition file by name.
-// Checks .forge/agents/<name>.md locally, then ~/.forge/agents/<name>.md.
-func ResolveAgent(cwd, name string) string {
-	return ResolveFile(cwd, filepath.Join("agents", name+".md"))
+// AgentsDir returns the path to the agents directory.
+func AgentsDir() string {
+	return filepath.Join(LibraryDir(), "agents")
 }
 
-// ResolvePipeline resolves a pipeline script by filename.
-// Checks .forge/pipeline/<name> locally, then ~/.forge/pipeline/<name>.
-func ResolvePipeline(cwd, name string) string {
-	return ResolveFile(cwd, filepath.Join("pipeline", name))
+// SkillsDir returns the path to the skills directory.
+func SkillsDir() string {
+	return filepath.Join(LibraryDir(), "skills")
 }
 
-// ResolveHook resolves a hook script by filename.
-// Checks .forge/hooks/<name> locally, then ~/.forge/hooks/<name>.
-func ResolveHook(cwd, name string) string {
-	return ResolveFile(cwd, filepath.Join("hooks", name))
+// PipelineDir returns the path to the pipeline directory.
+func PipelineDir() string {
+	return filepath.Join(LibraryDir(), "pipeline")
 }
 
-// ResolveSkill resolves a skill directory by name.
-// Checks .claude/skills/<name>/SKILL.md locally, then ~/.forge/skills/<name>/SKILL.md.
-func ResolveSkill(cwd, name string) string {
-	local := filepath.Join(cwd, ".claude", "skills", name, "SKILL.md")
-	if fileExists(local) {
-		return local
-	}
-	global := filepath.Join(ForgeHome(), "skills", name, "SKILL.md")
-	if fileExists(global) {
-		return global
+// ResolveAgent finds an agent by name. Returns empty string if not found.
+func ResolveAgent(name string) string {
+	path := filepath.Join(AgentsDir(), name+".md")
+	if fileExists(path) {
+		return path
 	}
 	return ""
 }
 
-// ListAgents merges agents from both ~/.forge/agents/ and .forge/agents/ in cwd.
-// Local agents override global agents with the same name.
-func ListAgents(cwd string) []AgentInfo {
-	agents := make(map[string]AgentInfo)
-
-	// Load global agents first
-	globalDir := filepath.Join(ForgeHome(), "agents")
-	loadAgentsFromDir(globalDir, true, agents)
-
-	// Load local agents (overrides global on name collision)
-	localDir := filepath.Join(cwd, ".forge", "agents")
-	loadAgentsFromDir(localDir, false, agents)
-
-	result := make([]AgentInfo, 0, len(agents))
-	for _, a := range agents {
-		result = append(result, a)
+// ResolveSkill finds a skill by name. Returns empty string if not found.
+func ResolveSkill(name string) string {
+	path := filepath.Join(SkillsDir(), name, "SKILL.md")
+	if fileExists(path) {
+		return path
 	}
-	return result
+	return ""
 }
 
-func loadAgentsFromDir(dir string, global bool, into map[string]AgentInfo) {
+// ListAgents returns all agents in the library.
+func ListAgents() []AgentInfo {
+	dir := AgentsDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return
+		return nil
 	}
+	var agents []AgentInfo
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			continue
 		}
 		name := strings.TrimSuffix(entry.Name(), ".md")
-		into[name] = AgentInfo{
-			Name:   name,
-			Path:   filepath.Join(dir, entry.Name()),
-			Global: global,
-		}
+		agents = append(agents, AgentInfo{
+			Name: name,
+			Path: filepath.Join(dir, entry.Name()),
+		})
 	}
+	return agents
 }
 
-// ProjectID returns a stable short identifier for a project directory.
-// Uses the git remote URL if available, otherwise the absolute path.
-// The result is a 12-char hex hash safe for use as a directory name.
-func ProjectID(cwd string) string {
-	// Try git remote first for stable identity across clones
-	remote := gitRemoteURL(cwd)
-	if remote != "" {
-		return shortHash(remote)
-	}
-	// Fall back to absolute path
-	abs, err := filepath.Abs(cwd)
+// ListSkills returns all skills in the library.
+func ListSkills() []SkillInfo {
+	dir := SkillsDir()
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		abs = cwd
+		return nil
 	}
-	return shortHash(abs)
-}
-
-// ProjectDir returns ~/.forge/projects/<project-id>/ for project-specific state.
-func ProjectDir(cwd string) string {
-	return filepath.Join(ForgeHome(), "projects", ProjectID(cwd))
-}
-
-// ProjectRunsDir returns the pipeline runs directory for a project.
-func ProjectRunsDir(cwd string) string {
-	return filepath.Join(ProjectDir(cwd), "runs")
-}
-
-// ProjectContextDir returns the context directory for a project.
-func ProjectContextDir(cwd string) string {
-	return filepath.Join(ProjectDir(cwd), "context")
-}
-
-func shortHash(s string) string {
-	h := sha256.Sum256([]byte(s))
-	return fmt.Sprintf("%x", h[:6])
-}
-
-func gitRemoteURL(cwd string) string {
-	// Read .git/config for remote URL — avoid exec for speed
-	gitConfig := filepath.Join(cwd, ".git", "config")
-	data, err := os.ReadFile(gitConfig)
-	if err != nil {
-		return ""
-	}
-	lines := strings.Split(string(data), "\n")
-	inRemote := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == `[remote "origin"]` {
-			inRemote = true
+	var skills []SkillInfo
+	for _, entry := range entries {
+		if !entry.IsDir() {
 			continue
 		}
-		if inRemote && strings.HasPrefix(trimmed, "url = ") {
-			return strings.TrimPrefix(trimmed, "url = ")
-		}
-		if inRemote && strings.HasPrefix(trimmed, "[") {
-			break
+		skillFile := filepath.Join(dir, entry.Name(), "SKILL.md")
+		if fileExists(skillFile) {
+			skills = append(skills, SkillInfo{
+				Name: entry.Name(),
+				Path: skillFile,
+			})
 		}
 	}
-	return ""
+	return skills
 }
 
 func fileExists(path string) bool {

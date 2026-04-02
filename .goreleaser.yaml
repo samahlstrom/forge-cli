@@ -35,7 +35,7 @@ brews:
     directory: Formula
     name: forge
     homepage: "https://github.com/samahlstrom/forge-cli"
-    description: "Agent harness scaffolding for Claude Code"
+    description: "Portable AI agent toolkit for Claude Code"
     install: |
       bin.install "forge"
 

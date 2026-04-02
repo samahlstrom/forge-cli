@@ -14,70 +14,79 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var agentBody string
+
 func init() {
 	agentCmd := &cobra.Command{
 		Use:   "agent",
-		Short: "Manage your agent library",
+		Short: "Manage agents in your toolkit",
 	}
 
 	agentCmd.AddCommand(&cobra.Command{
 		Use:   "list",
-		Short: "List all agents (global + local overrides)",
+		Short: "List all agents",
 		RunE:  runAgentList,
 	})
 
 	agentCmd.AddCommand(&cobra.Command{
+		Use:   "show [name]",
+		Short: "Print an agent's full definition",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runAgentShow,
+	})
+
+	agentCmd.AddCommand(&cobra.Command{
 		Use:   "edit [name]",
-		Short: "Open an agent definition in your editor",
+		Short: "Open an agent in your editor",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runAgentEdit,
 	})
 
-	agentCmd.AddCommand(&cobra.Command{
-		Use:   "create [name]",
-		Short: "Scaffold a new agent in ~/.forge/agents/",
+	addCmd := &cobra.Command{
+		Use:   "add [name]",
+		Short: "Add a new agent to your toolkit (commits + pushes to forge repo)",
 		Args:  cobra.ExactArgs(1),
-		RunE:  runAgentCreate,
-	})
-
-	agentCmd.AddCommand(&cobra.Command{
-		Use:   "promote [path]",
-		Short: "Copy a local agent override to the global library",
-		Args:  cobra.ExactArgs(1),
-		RunE:  runAgentPromote,
-	})
+		RunE:  runAgentAdd,
+	}
+	addCmd.Flags().StringVar(&agentBody, "body", "", "Full markdown body for the agent")
+	agentCmd.AddCommand(addCmd)
 
 	rootCmd.AddCommand(agentCmd)
 }
 
 func runAgentList(_ *cobra.Command, _ []string) error {
-	cwd, _ := os.Getwd()
-	agents := resolve.ListAgents(cwd)
-
+	agents := resolve.ListAgents()
 	if len(agents) == 0 {
-		fmt.Println("No agents found. Run `forge setup` to bootstrap your library.")
+		fmt.Println("No agents found. Run 'forge setup' first.")
 		return nil
 	}
 
 	sort.Slice(agents, func(i, j int) bool { return agents[i].Name < agents[j].Name })
 
 	for _, a := range agents {
-		source := ui.Dim("global")
-		if !a.Global {
-			source = ui.Yellow("local override")
-		}
-		fmt.Printf("  %s  %s  %s\n", a.Name, source, ui.Dim(a.Path))
+		fmt.Printf("  %s  %s\n", a.Name, ui.Dim(a.Path))
 	}
+	return nil
+}
+
+func runAgentShow(_ *cobra.Command, args []string) error {
+	path := resolve.ResolveAgent(args[0])
+	if path == "" {
+		return fmt.Errorf("agent %q not found — add it with: forge agent add %s --body '...'", args[0], args[0])
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	fmt.Print(string(data))
 	return nil
 }
 
 func runAgentEdit(_ *cobra.Command, args []string) error {
 	name := args[0]
-	cwd, _ := os.Getwd()
-
-	path := resolve.ResolveAgent(cwd, name)
+	path := resolve.ResolveAgent(name)
 	if path == "" {
-		return fmt.Errorf("agent %q not found — create it with: forge agent create %s", name, name)
+		return fmt.Errorf("agent %q not found — add it with: forge agent add %s --body '...'", name, name)
 	}
 
 	editor := os.Getenv("EDITOR")
@@ -92,15 +101,63 @@ func runAgentEdit(_ *cobra.Command, args []string) error {
 	return cmd.Run()
 }
 
-func runAgentCreate(_ *cobra.Command, args []string) error {
+func runAgentAdd(_ *cobra.Command, args []string) error {
 	name := args[0]
-	agentPath := filepath.Join(resolve.ForgeHome(), "agents", name+".md")
 
-	if util.Exists(agentPath) {
-		return fmt.Errorf("agent %q already exists at %s — use `forge agent edit %s` instead", name, agentPath, name)
+	if !resolve.IsRepoCloned() {
+		return fmt.Errorf("forge not set up — run 'forge setup' first")
 	}
 
-	scaffold := fmt.Sprintf(`---
+	// Write to the repo's library/agents/ so it's tracked in git
+	repoAgentPath := filepath.Join(resolve.RepoDir(), "library", "agents", name+".md")
+
+	if util.Exists(repoAgentPath) {
+		return fmt.Errorf("agent %q already exists — use 'forge agent edit %s' instead", name, name)
+	}
+
+	content := agentBody
+	if content == "" {
+		content = scaffoldAgent(name)
+	}
+
+	if err := util.WriteText(repoAgentPath, content); err != nil {
+		return fmt.Errorf("failed to write agent: %w", err)
+	}
+
+	ui.Log.Success(fmt.Sprintf("Created %s", repoAgentPath))
+
+	// Commit and push to the forge repo
+	repoDir := resolve.RepoDir()
+	relPath := filepath.Join("library", "agents", name+".md")
+
+	gitAdd := exec.Command("git", "-C", repoDir, "add", relPath)
+	if err := gitAdd.Run(); err != nil {
+		ui.Log.Warn("Failed to stage — commit manually.")
+		return nil
+	}
+
+	gitCommit := exec.Command("git", "-C", repoDir, "commit", "-m", fmt.Sprintf("feat: add %s agent", name))
+	gitCommit.Stdout = os.Stdout
+	gitCommit.Stderr = os.Stderr
+	if err := gitCommit.Run(); err != nil {
+		ui.Log.Warn("Failed to commit — commit manually.")
+		return nil
+	}
+
+	gitPush := exec.Command("git", "-C", repoDir, "push")
+	gitPush.Stdout = os.Stdout
+	gitPush.Stderr = os.Stderr
+	if err := gitPush.Run(); err != nil {
+		ui.Log.Warn("Committed locally but push failed — run 'git -C " + repoDir + " push' when online.")
+		return nil
+	}
+
+	ui.Log.Success("Agent committed and pushed — available on all machines after 'forge sync'.")
+	return nil
+}
+
+func scaffoldAgent(name string) string {
+	return fmt.Sprintf(`---
 id: %s
 name: %s
 type: builder
@@ -130,38 +187,11 @@ You are the %s agent. Describe your role here.
 ## Process
 
 1. Read the subtask.
-2. Read context from forge.yaml and .forge/context/.
-3. Implement the work.
-4. Verify using the project's verification commands (see forge.yaml).
+2. Implement the work.
+3. Verify using the project's verification commands.
 
 ## Constraints
 
 - Follow all patterns in the project's stack conventions
 `, name, name, name, name)
-
-	if err := util.WriteText(agentPath, scaffold); err != nil {
-		return fmt.Errorf("failed to create agent: %w", err)
-	}
-
-	ui.Log.Success(fmt.Sprintf("Created %s", agentPath))
-	ui.Log.Step(fmt.Sprintf("Edit with: forge agent edit %s", name))
-	return nil
-}
-
-func runAgentPromote(_ *cobra.Command, args []string) error {
-	sourcePath := args[0]
-
-	if !util.Exists(sourcePath) {
-		return fmt.Errorf("file not found: %s", sourcePath)
-	}
-
-	name := filepath.Base(sourcePath)
-	destPath := filepath.Join(resolve.ForgeHome(), "agents", name)
-
-	if err := util.CopyFile(sourcePath, destPath); err != nil {
-		return fmt.Errorf("failed to promote agent: %w", err)
-	}
-
-	ui.Log.Success(fmt.Sprintf("Promoted %s → %s", sourcePath, destPath))
-	return nil
 }

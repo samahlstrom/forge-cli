@@ -115,7 +115,7 @@ func NotifyIfAvailable(currentVersion string) {
 		color.YellowString(currentVersion),
 		color.CyanString(cache.LatestVersion),
 	)
-	fmt.Printf("  Run: %s\n\n", color.CyanString("brew upgrade forge"))
+	fmt.Printf("  Run: %s\n\n", color.CyanString("brew upgrade samahlstrom/tap/forge"))
 }
 
 // isNewer reports whether latest is a higher semver than current.

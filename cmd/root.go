@@ -11,27 +11,25 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "forge",
-	Short: "Agent harness scaffolding for Claude Code",
-	Long: `forge — Agent harness scaffolding for Claude Code
+	Short: "Portable AI agent toolkit for Claude Code",
+	Long: `forge — Portable AI agent toolkit for Claude Code
 
-Forge sets up your project so AI agents can build, test, and deliver
-code through a structured pipeline with quality gates.
+Your personal library of agents, skills, and workflows.
+Take it anywhere, use it in any project, add to it anytime.
 
 Getting started:
-  forge init                  Set up forge in your project
-  forge init --spec spec.pdf  Set up from a spec/PRD document
+  forge setup       Install your toolkit to ~/.forge/
+  forge sync        Pull latest tools from the forge repo
+  forge list        See everything in your toolkit
 
-Once initialized, open Claude Code and tell your agent:
-  /forge "add user authentication"     Full pipeline (decompose → review → execute → verify → evaluate)
-  /forge --quick "fix typo in README"  Lightweight change (skip decomposition + evaluation)
-  /ingest <spec-id>                    Break down a large spec into tasks
+Managing tools:
+  forge agent list              List all agents
+  forge agent add <name>        Add a new agent
+  forge agent edit <name>       Edit an existing agent
+  forge skill <name>            Load a skill into Claude Code
 
-Your agent handles everything — you just describe what to build.
-
-Other commands:
-  forge doctor    Check harness health
-  forge upgrade   Update forge to latest version
-  forge status    Show current pipeline state`,
+Your toolkit lives in ~/.forge/ — a git clone of your forge repo.
+Claude Code reads from it at runtime. Zero footprint in your projects.`,
 }
 
 func Execute() {
