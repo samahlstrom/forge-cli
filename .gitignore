@@ -36,4 +36,4 @@ dist/
 *.db
 .beads-credential-key
 .forge-measure-bin
-forge
+/forge

@@ -1,0 +1,391 @@
+# forge
+
+> Intake, classify, and execute tracked work through the forge pipeline.
+
+## Trigger
+
+User runs `/forge <description>` or `/forge --flag`
+
+## You Are the Pipeline
+
+You are the orchestrator. You run every stage directly using your tools — Bash for mechanical work, Agent for subagent dispatch, Read/Write for state. No external state machine. No PAUSE/resume. You run continuously from start to finish.
+
+### Path Setup (MUST run first)
+
+Before doing anything, resolve all paths by running:
+```
+Bash("forge paths")
+```
+
+This returns JSON with all resolved directories. Store these values and use them throughout:
+- `forge_home` — root of forge (e.g., `~/.forge/`)
+- `library_dir` — the toolkit content (e.g., `~/.forge/library/`)
+- `agents_dir` — agent definitions (e.g., `~/.forge/library/agents/`)
+- `skills_dir` — skill definitions (e.g., `~/.forge/library/skills/`)
+- `pipeline_dir` — pipeline scripts (e.g., `~/.forge/library/pipeline/`)
+- `repo_dir` — the forge repo clone (e.g., `~/.forge/repo/`)
+
+**CRITICAL**: Nothing is written to the project directory. All agents/pipeline/skills live in `library_dir`. The toolkit is read-only from the project's perspective — zero footprint.
+
+**Agents are discovered dynamically**: list `<agents_dir>/*.md` to see what's available. New agents added via `forge agent add` are immediately usable.
+
+**DO NOT:**
+- Skip stages (intake → classify → decompose → review-plan → execute → verify → evaluate → deliver)
+- Write code without going through decompose → review-plan → execute
+- Decide a task is "too simple" for decomposition (only `--quick` and `--hotfix` flags skip it)
+- Ask the user for input mid-pipeline — the pipeline is autonomous
+
+## Contract
+
+1. **OPEN**: "Starting /forge pipeline for: [description]."
+2. **WORK**: Execute Steps 1-13 below.
+3. **REPORT**: Present summary — what was built, agents dispatched, scores, decisions, issues.
+4. **CLOSE**: "Pipeline complete."
+
+---
+
+## Step 0: Resume Check
+
+If the user passed `--resume <id>`:
+
+1. Set `task_id` = `<id>`
+2. Set `task_dir` = `<runs_dir>/<task_id>`
+3. Check which artifacts exist and skip to the appropriate step:
+   - `run-report.json` exists → Already done. Read and show the report. Stop.
+   - `evaluation-N.json` with `verdict: "pass"` → Skip to Step 11
+   - `execution.json` exists → Skip to Step 8
+   - `plan-review.json` with `verdict: "approve"` → Skip to Step 7
+   - `decomposition.json` exists → Skip to Step 6
+   - `classification.json` exists → Skip to Step 4
+   - `intake.json` exists → Skip to Step 3
+   - Nothing found → Error: no run found for `<id>`
+4. Read `classification.json` to recover `tier`, read bd labels to recover `mode`
+
+---
+
+## Step 1: Intake
+
+Run intake to parse the user's input:
+
+```
+Bash("bash <pipeline_dir>/intake.sh <user-input-with-flags>")
+```
+
+Parse the JSON output: `title`, `description`, `mode`, `quality_score`.
+
+## Step 2: Create Task
+
+Create a bead for tracking:
+
+```
+Bash("echo '<description>' | bd create '<title>' --body-file - --add-label 'mode:<mode>' --json")
+```
+
+Extract `task_id` from the JSON response (the `.id` field).
+
+```
+Bash("mkdir -p <runs_dir>/<task_id>/reports")
+```
+
+Write the intake JSON to `<runs_dir>/<task_id>/intake.json`.
+
+## Step 3: Classify Risk
+
+Read `<pipeline_dir>/classify.md` for the classification rules.
+Run `Bash("bd show <task_id>")` to see the full task context.
+
+Apply the rules yourself — this is a language task, no agent needed:
+- **T3**: touches auth, encryption, PII, payments, security controls
+- **T2**: touches APIs, database, business logic, state management
+- **T1**: styling, docs, tests, config only
+- **T3 wins**: if ANY part is T3, the whole task is T3
+- **When ambiguous, go up**: T1↔T2 → pick T2, T2↔T3 → pick T3
+
+Write your classification to `<runs_dir>/<task_id>/classification.json`:
+```json
+{"tier": "T1|T2|T3", "reason": "One sentence explaining why"}
+```
+
+Label the bead: `Bash("bd update <task_id> --add-label 'tier:<tier>'")`
+
+## Step 4: Mode Check
+
+If `mode` is `quick` or `hotfix`: **skip to Step 8**.
+
+All other modes proceed through full decomposition and review.
+
+## Step 5: Decompose + Security
+
+Dispatch TWO agents in parallel (single message, two Agent tool calls):
+
+**Before dispatching**, build the agent roster dynamically:
+```
+Bash("ls <agents_dir>/*.md | sed 's/.*\///' | sed 's/\.md$//'")
+```
+Then for each agent, read the YAML frontmatter to get `id`, `specializes`, `good_at`. Build the roster list.
+
+**Agent 1 — Architect (model: sonnet):**
+```
+"You are the Architect agent. Read and follow <agents_dir>/architect.md.
+Task: bd show <task_id>
+Read context: <context_dir>/stack.md, <context_dir>/project.md
+Write your execution manifest JSON to <runs_dir>/<task_id>/decomposition.json
+
+Available agents for subtask assignment (each maps to <agents_dir>/<name>.md):
+<dynamically built roster with name — specializes for each agent>
+
+Assign each subtask to one of these agents based on what the subtask does.
+Follow the Agent Contract: OPEN → WORK → REPORT → CLOSE."
+```
+
+**Agent 2 — Security (model: sonnet):**
+```
+"You are the Security agent. Read and follow <agents_dir>/security.md.
+Task: bd show <task_id>
+Read context: <context_dir>/stack.md, <context_dir>/project.md
+Analyze security implications. Output risk annotations JSON to
+<runs_dir>/<task_id>/security-annotations.json
+Follow the Agent Contract: OPEN → WORK → REPORT → CLOSE."
+```
+
+After both return:
+1. Read `decomposition.json` and `security-annotations.json`
+2. Merge security annotations into the decomposition subtasks (add `security` field to each subtask that has annotations)
+3. Write the merged result back to `decomposition.json`
+
+## Step 6: Review Plan
+
+Dispatch the plan reviewer:
+
+```
+Agent (model: sonnet): "You are the Plan Reviewer. Read and follow <pipeline_dir>/review-plan.md.
+Review the decomposition at <runs_dir>/<task_id>/decomposition.json.
+Read context: <context_dir>/stack.md, <context_dir>/project.md.
+Write your review JSON to <runs_dir>/<task_id>/plan-review.json.
+Follow the Agent Contract: OPEN → WORK → REPORT → CLOSE."
+```
+
+Read `plan-review.json`. Check `verdict`:
+- **approve** → proceed to Step 7
+- **revise** or **reject** → archive current review as `plan-review-N.json`, increment counter
+  - If counter >= 3: close the task bead (`bd close <task_id> --reason "Plan failed review 3 times"`), report failure to user, stop
+  - Otherwise: go back to Step 5 with the `revision_instructions` from the review as additional context for the architect
+
+## Step 7: Execute Waves
+
+Read `decomposition.json`. Extract `waves[]` and `subtasks[]`.
+
+**For each wave in order:**
+
+1. Read the wave's subtask IDs
+2. For EACH subtask in the wave, spawn an agent with `isolation: "worktree"`, `model: "sonnet"` — all subtasks in the same wave in a SINGLE message (parallel):
+
+```
+Agent (per subtask, isolation: "worktree", model: "sonnet"):
+"You are a <assigned_agent> agent working on bead <bead_id>.
+Read and follow <agents_dir>/<assigned_agent>.md.
+
+Task: <parent task title>
+Subtask: <subtask title> (<subtask id>)
+Bead: <bead_id>
+
+Instructions:
+<subtask instructions from manifest>
+
+Files to modify: <subtask files>
+Only modify these files.
+
+Verification: <subtask verification>
+
+Project context: <context_dir>/stack.md, <context_dir>/project.md
+
+<If revision iteration: include revision_brief from latest evaluation>
+
+When complete:
+1. Write your JSON report to <runs_dir>/<task_id>/reports/<subtask_id>.json
+2. Report MUST include: bead_id, task_given, approach_planned, approach_taken,
+   files_modified, files_created, decisions, issues_encountered, status
+3. Close your bead: bd close <bead_id> --reason='<summary>'"
+```
+
+3. After ALL subtasks in the wave return, merge and clean up each worktree:
+   - Each agent result includes a `worktree_path` and `branch`. For each:
+     ```
+     Bash("git merge <branch> --no-edit")
+     Bash("git worktree remove <worktree_path>")
+     Bash("git branch -d <branch>")
+     ```
+   - If merge conflicts occur, resolve them before proceeding.
+
+4. Run the wave gate — read the `commands` section from `forge.yaml` for the actual commands:
+   ```
+   Bash("<typecheck command from forge.yaml>")
+   ```
+   If the wave's `gate` includes "test":
+   ```
+   Bash("<test command from forge.yaml>")
+   ```
+
+5. If the gate fails:
+   - Read error output to identify which subtask's files caused the failure
+   - Retry that subtask ONCE with the error output as additional context
+   - If retry fails: `Bash("git checkout -- <files>")` to revert, close the subtask bead (`bd close <bead_id> --reason "Deferred: gate failure after retry"`), mark subtask as deferred, continue
+
+6. After ALL waves complete, read all reports from `<runs_dir>/<task_id>/reports/`:
+   - Compile `execution.json`: status, waves_executed, subtasks_completed, subtasks_deferred, files_modified, verification results
+   - Compile `agent-log.json`: every agent's report, successes, failures, improvements
+
+Write both files to the task's run directory.
+
+## Step 8: Verify
+
+Run mechanical verification:
+```
+Bash("bash <pipeline_dir>/verify.sh <task_id> <tier>")
+```
+
+Read the JSON output. If `passed` is false:
+- Close the task bead: `Bash("bd close <task_id> --reason 'Verification failed: <failed_check>'")`
+- Also close any open subtask beads: for each subtask bead that wasn't already closed, run `bd close <bead_id> --reason "Parent task verification failed"`
+- Report the failed check and stderr to the user
+- Stop the pipeline (user needs to fix and `/forge --resume <task_id>`)
+
+If `mode` is `quick` or `hotfix`: **skip to Step 11**.
+
+## Step 9: Evaluate
+
+Generate the diff for evaluators:
+```
+Bash("git diff HEAD~1 > <runs_dir>/<task_id>/eval-<iteration>-diff.patch")
+```
+(If `HEAD~1` fails, use `git diff` instead)
+
+Dispatch THREE evaluators in parallel (single message, three Agent tool calls):
+
+**Agent 1 — Edgar (model: sonnet):**
+```
+"You are Edgar. Read and follow <agents_dir>/edgar.md.
+Evaluate the diff at <runs_dir>/<task_id>/eval-<iteration>-diff.patch.
+Read execution summary at <runs_dir>/<task_id>/execution.json.
+Context: <context_dir>/stack.md, <context_dir>/project.md.
+Write your JSON report to <runs_dir>/<task_id>/reports/eval-<iteration>-edgar.json.
+Follow the Agent Contract: OPEN → WORK → REPORT → CLOSE."
+```
+
+**Agent 2 — Code Quality (model: sonnet):** (same pattern, reads `<agents_dir>/code-quality.md`, writes `eval-<iteration>-code-quality.json`)
+
+**Agent 3 — Um-Actually (model: sonnet):** (same pattern, reads `<agents_dir>/um-actually.md`, writes `eval-<iteration>-um-actually.json`)
+
+## Step 10: Aggregate + Verdict
+
+After all three evaluators return, read their report files.
+
+Extract `weighted_total` from each (default `0.5` if missing or invalid JSON).
+
+Compute composite score:
+```
+composite = (edgar * 0.35) + (code_quality * 0.35) + (um_actually * 0.30)
+```
+
+Determine verdict:
+- **PASS** (composite >= 0.7 AND no evaluator has verdict "fail"):
+  Write `evaluation-<iteration>.json` with verdict "pass". Proceed to Step 11.
+
+- **REVISE** (composite 0.5-0.7 OR any evaluator verdict "conditional"):
+  If iteration < 3:
+    - Collect all critical and high severity findings from all three reports
+    - Build a revision brief with: scores per evaluator, composite, specific findings with file:line references
+    - Write `evaluation-<iteration>.json` with verdict "revise" and the revision brief
+    - Increment iteration. Go back to Step 7 (re-execute with revision brief as context)
+  Else: treat as FAIL
+
+- **FAIL** (composite < 0.5 OR evaluator verdict "fail" AND iteration >= 3):
+  Write `evaluation-<iteration>.json` with verdict "fail"
+  Close the task bead: `Bash("bd close <task_id> --reason 'Evaluation failed: composite=<score>'")`
+  Also close any open subtask beads: for each subtask bead that wasn't already closed, run `bd close <bead_id> --reason "Parent task evaluation failed"`
+  Report failure to user with all findings. Stop.
+
+## Step 11: Deliver
+
+Create branch, commit, and push:
+```
+Bash("bash <pipeline_dir>/deliver.sh <task_id>")
+```
+
+Read the JSON output: `branch`, `commit_sha`, `has_remote`.
+
+## Step 12: Create PR
+
+If `has_remote` is false: skip PR creation, just report the branch and commit.
+
+Write a PR body based on everything you know — the task description, execution summary, evaluation scores, agent decisions. Write it to `<runs_dir>/<task_id>/pr-body.md`.
+
+Create the PR:
+```
+Bash("gh pr create --title '<title (max 70 chars)>' --body-file <runs_dir>/<task_id>/pr-body.md --head <branch>")
+```
+
+Add labels by tier:
+- T3: `Bash("gh pr edit <pr_url> --add-label 'critical,security-review'")`
+- T2: `Bash("gh pr edit <pr_url> --add-label 'needs-review'")`
+
+## Step 13: Report + Close
+
+Build the run report and write to `<runs_dir>/<task_id>/run-report.json`:
+```json
+{
+  "task_id": "<task_id>",
+  "title": "<title>",
+  "pr_url": "<pr_url>",
+  "branch": "<branch>",
+  "tier": "<tier>",
+  "agents_dispatched": N,
+  "agents_succeeded": N,
+  "agents_failed": N,
+  "evaluation_iterations": N,
+  "final_composite_score": 0.0
+}
+```
+
+Close the bead:
+```
+Bash("bd close <task_id> --reason 'Delivered: PR <pr_url>'")
+```
+
+Present the summary to the user:
+- What was built (title, PR URL, branch)
+- How many agents dispatched, succeeded, failed
+- Key decisions agents made (from agent-log.json)
+- Evaluation scores and iterations needed
+- Issues encountered and how they were resolved
+
+---
+
+## Agent Report Format
+
+Every agent spawned during Step 7 MUST write a structured report:
+
+```json
+{
+  "bead_id": "<assigned bead>",
+  "subtask_id": "<subtask id>",
+  "agent": "<agent id>",
+  "task_given": "What they were asked to do",
+  "approach_planned": "How they planned to do it before starting",
+  "approach_taken": "What they actually did",
+  "files_modified": [],
+  "files_created": [],
+  "decisions": ["Key choices and why"],
+  "issues_encountered": ["Problems and resolutions"],
+  "status": "complete|blocked|failed"
+}
+```
+
+`task_given` vs `approach_taken` is the metric for measuring agent effectiveness.
+
+## Flags
+
+- `--quick` — Skip decomposition + evaluation, minimal verification
+- `--hotfix` — Skip decomposition + evaluation, auto T1
+- `--issue <N>` — Fetch GitHub issue as input
+- `--resume <id>` — Resume from last completed step
