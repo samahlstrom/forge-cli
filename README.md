@@ -68,6 +68,7 @@ Or if you already ran `forge setup` there, use `forge sync` to pull updates.
 |---|---|
 | `forge setup` | One-time — creates your toolkit at `~/.forge/` |
 | `forge init` | Per-project — symlinks skills into `.claude/skills/` |
+| `forge get <repo> [name]` | Pull a skill from any skills repo into your toolkit |
 | `forge sync` | Pull the latest from your toolkit's remote |
 | `forge list` | List all agents and skills in your toolkit |
 | `forge agent list` | List agents |
@@ -104,6 +105,24 @@ The main workflow. When you run `/forge "Add JWT authentication"` in Claude Code
 ### The `/ingest` skill
 
 Decomposes spec documents (PDFs, markdown, text) into structured project plans with epics, features, and atomic tasks.
+
+### Pulling from the ecosystem
+
+```bash
+# Browse Anthropic's official skill library
+forge get anthropics/skills
+
+# Pull a skill into your toolkit
+forge get anthropics/skills pdf
+
+# Pull from any GitHub repo
+forge get someone/their-toolkit code-review
+
+# Pull an agent
+forge get someone/their-toolkit debugger --agent
+```
+
+Works with any repo that has `skills/` or `agents/` directories — the same format used by [Anthropic's skills repo](https://github.com/anthropics/skills).
 
 ### Adding your own tools
 
