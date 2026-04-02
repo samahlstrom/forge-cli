@@ -130,22 +130,14 @@ func runSkillAdd(_ *cobra.Command, args []string) error {
 
 	ui.Log.Success(fmt.Sprintf("Created %s", skillFile))
 
-	// Commit and push to the forge repo if it's a repo-based layout
+	// Commit and push to the forge repo
 	repoDir := resolve.RepoDir()
 	if !resolve.IsRepoCloned() {
-		ui.Log.Info("Skill created locally. No forge repo to push to.")
+		ui.Log.Info("Skill created locally. Run 'forge setup' to enable sync across machines.")
 		return nil
 	}
 
 	relPath := filepath.Join("library", "skills", name, "SKILL.md")
-	repoSkillFile := filepath.Join(repoDir, relPath)
-
-	// If the skill was written outside the repo (flat layout), we're done
-	if skillFile != repoSkillFile {
-		ui.Log.Info("Skill created. Push your ~/.forge/ changes manually to share across machines.")
-		return nil
-	}
-
 	gitAdd := exec.Command("git", "-C", repoDir, "add", relPath)
 	if err := gitAdd.Run(); err != nil {
 		ui.Log.Warn("Failed to stage — commit manually.")

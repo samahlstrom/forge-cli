@@ -104,14 +104,13 @@ func runAgentEdit(_ *cobra.Command, args []string) error {
 func runAgentAdd(_ *cobra.Command, args []string) error {
 	name := args[0]
 
-	if !resolve.IsRepoCloned() {
+	if !resolve.IsSetup() {
 		return fmt.Errorf("forge not set up — run 'forge setup' first")
 	}
 
-	// Write to the repo's library/agents/ so it's tracked in git
-	repoAgentPath := filepath.Join(resolve.RepoDir(), "library", "agents", name+".md")
+	agentPath := filepath.Join(resolve.AgentsDir(), name+".md")
 
-	if util.Exists(repoAgentPath) {
+	if util.Exists(agentPath) {
 		return fmt.Errorf("agent %q already exists — use 'forge agent edit %s' instead", name, name)
 	}
 
@@ -120,16 +119,20 @@ func runAgentAdd(_ *cobra.Command, args []string) error {
 		content = scaffoldAgent(name)
 	}
 
-	if err := util.WriteText(repoAgentPath, content); err != nil {
+	if err := util.WriteText(agentPath, content); err != nil {
 		return fmt.Errorf("failed to write agent: %w", err)
 	}
 
-	ui.Log.Success(fmt.Sprintf("Created %s", repoAgentPath))
+	ui.Log.Success(fmt.Sprintf("Created %s", agentPath))
 
 	// Commit and push to the forge repo
 	repoDir := resolve.RepoDir()
-	relPath := filepath.Join("library", "agents", name+".md")
+	if !resolve.IsRepoCloned() {
+		ui.Log.Info("Agent created locally. Run 'forge setup' to enable sync across machines.")
+		return nil
+	}
 
+	relPath := filepath.Join("library", "agents", name+".md")
 	gitAdd := exec.Command("git", "-C", repoDir, "add", relPath)
 	if err := gitAdd.Run(); err != nil {
 		ui.Log.Warn("Failed to stage — commit manually.")
