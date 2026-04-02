@@ -32,13 +32,21 @@ func ForgeHome() string {
 }
 
 // LibraryDir returns the library content directory inside ~/.forge/.
+// Supports both layouts:
+//   - New: ~/.forge/library/ (symlink to repo/library/)
+//   - Flat: ~/.forge/ (files copied directly)
 func LibraryDir() string {
-	return filepath.Join(ForgeHome(), "library")
+	lib := filepath.Join(ForgeHome(), "library")
+	if info, err := os.Stat(lib); err == nil && info.IsDir() {
+		return lib
+	}
+	// Fall back to flat layout where agents/skills live directly in forge home
+	return ForgeHome()
 }
 
-// IsSetup returns true if ~/.forge/library/agents/ exists.
+// IsSetup returns true if the agents directory exists in either layout.
 func IsSetup() bool {
-	info, err := os.Stat(filepath.Join(LibraryDir(), "agents"))
+	info, err := os.Stat(AgentsDir())
 	return err == nil && info.IsDir()
 }
 

@@ -26,7 +26,9 @@ Managing tools:
   forge agent list              List all agents
   forge agent add <name>        Add a new agent
   forge agent edit <name>       Edit an existing agent
-  forge skill <name>            Load a skill into Claude Code
+  forge skill list              List all skills
+  forge skill add <name>        Add a new skill
+  forge skill edit <name>       Edit an existing skill
 
 Your toolkit lives in ~/.forge/ — a git clone of your forge repo.
 Claude Code reads from it at runtime. Zero footprint in your projects.`,
