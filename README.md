@@ -31,7 +31,8 @@ Pre-built binaries for macOS, Linux, and Windows (amd64/arm64) are available on 
 ```bash
 git clone https://github.com/samahlstrom/forge-cli.git
 cd forge-cli
-make install
+make build
+# Binary is at bin/forge — move it somewhere on your PATH
 ```
 
 ## Quick start
@@ -163,18 +164,25 @@ Project-specific skills (real files, not symlinks) are never overwritten and are
 ├── agents/                # Agent definitions (.md)
 │   ├── architect.md
 │   ├── backend.md
+│   ├── code-quality.md
+│   ├── edgar.md
 │   ├── frontend.md
 │   ├── quality.md
 │   ├── security.md
-│   └── ...
+│   ├── um-actually.md
+│   └── visual-qa.md
 ├── skills/                # Skill definitions (SKILL.md per skill)
+│   ├── evaluate/SKILL.md
 │   ├── forge/SKILL.md
 │   ├── ingest/SKILL.md
 │   └── skill-creator/SKILL.md
 └── pipeline/              # Pipeline scripts and prompts
     ├── intake.sh
     ├── classify.md
+    ├── helpers.sh
+    ├── review-plan.md
     ├── verify.sh
+    ├── browser-smoke.sh
     └── deliver.sh
 ```
 
