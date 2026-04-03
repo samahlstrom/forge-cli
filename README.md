@@ -52,6 +52,8 @@ forge list        # See your agents and skills
    - Adds a forge reference to `CLAUDE.md` so Claude knows the toolkit exists
    - Writes `.claude/skills/.gitignore` so symlinks aren't committed (they're machine-specific)
 
+   Use **`forge init --global`** to install skills into `~/.claude/skills/` instead — this makes them available in **every** Claude Code session across all interfaces (CLI, Desktop app, VS Code, JetBrains) without per-project setup.
+
 3. **`forge sync`** pulls and pushes your toolkit to/from GitHub, then re-wires any new skills into the current project.
 
 ### Cross-machine sync
@@ -75,6 +77,7 @@ Requires [GitHub CLI](https://cli.github.com/) (`gh`) authenticated via `gh auth
 |---|---|
 | `forge setup` | One-time — creates toolkit at `~/.forge/`, creates private GitHub repo |
 | `forge init` | Per-project — wires skills into `.claude/skills/` and `CLAUDE.md` |
+| `forge init --global` | User-wide — wires skills into `~/.claude/skills/` for all sessions |
 | `forge sync` | Pull + push toolkit, re-wire new skills into current project |
 | `forge get <repo> [name]` | Pull a skill or agent from any repo into your toolkit |
 | `forge list` | List all agents and skills |

@@ -15,17 +15,25 @@ import (
 const forgeMarkerBegin = "<!-- BEGIN FORGE INTEGRATION -->"
 const forgeMarkerEnd = "<!-- END FORGE INTEGRATION -->"
 
+var globalFlag bool
+
 func init() {
-	rootCmd.AddCommand(&cobra.Command{
+	initCmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize forge skills in the current project",
+		Short: "Initialize forge skills in the current project (or globally)",
 		Long: `Symlinks your toolkit's skills into .claude/skills/ so they're
 available as slash commands in Claude Code.
+
+Use --global to install skills into ~/.claude/skills/ instead, making
+them available in every Claude Code session (CLI, Desktop, VS Code,
+JetBrains).
 
 Skills are symlinked, not copied — running 'forge sync' updates them
 everywhere automatically.`,
 		RunE: runInit,
-	})
+	}
+	initCmd.Flags().BoolVarP(&globalFlag, "global", "g", false, "Install skills globally into ~/.claude/ (available in all projects and interfaces)")
+	rootCmd.AddCommand(initCmd)
 }
 
 func runInit(_ *cobra.Command, _ []string) error {
@@ -39,6 +47,73 @@ func runInit(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	if globalFlag {
+		return runInitGlobal(skills)
+	}
+	return runInitLocal(skills)
+}
+
+func runInitGlobal(skills []resolve.SkillInfo) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("could not find home directory: %w", err)
+	}
+
+	claudeDir := filepath.Join(home, ".claude")
+	skillsDir := filepath.Join(claudeDir, "skills")
+
+	ui.Intro("Installing forge globally into ~/.claude/")
+
+	installed := 0
+	for _, skill := range skills {
+		targetDir := filepath.Join(skillsDir, skill.Name)
+		targetFile := filepath.Join(targetDir, "SKILL.md")
+
+		// Check if already correctly symlinked
+		if dest, err := os.Readlink(targetFile); err == nil && dest == skill.Path {
+			ui.Log.Step(fmt.Sprintf("%s (already linked)", skill.Name))
+			installed++
+			continue
+		}
+
+		// Don't overwrite non-symlink skills
+		if info, err := os.Lstat(targetFile); err == nil && info.Mode()&os.ModeSymlink == 0 {
+			ui.Log.Step(fmt.Sprintf("%s (existing file, skipped)", skill.Name))
+			installed++
+			continue
+		}
+
+		if err := os.MkdirAll(targetDir, 0o755); err != nil {
+			ui.Log.Error(fmt.Sprintf("failed to create %s: %v", targetDir, err))
+			continue
+		}
+
+		os.Remove(targetFile)
+
+		if err := os.Symlink(skill.Path, targetFile); err != nil {
+			ui.Log.Error(fmt.Sprintf("failed to symlink %s: %v", skill.Name, err))
+			continue
+		}
+
+		ui.Log.Success(fmt.Sprintf("%s → %s", skill.Name, ui.Dim(skill.Path)))
+		installed++
+	}
+
+	fmt.Println()
+	if installed > 0 {
+		ui.Log.Info(fmt.Sprintf("%d skill(s) installed globally — available in all Claude Code sessions.", installed))
+	}
+
+	// Inject forge section into ~/.claude/CLAUDE.md
+	claudeMD := filepath.Join(claudeDir, "CLAUDE.md")
+	if err := ensureClaudeMDSectionAt(claudeMD, skills); err != nil {
+		ui.Log.Warn(fmt.Sprintf("Could not update ~/.claude/CLAUDE.md: %v", err))
+	}
+
+	return nil
+}
+
+func runInitLocal(skills []resolve.SkillInfo) error {
 	ui.Intro("Initializing forge in current project")
 
 	installed := 0
@@ -86,17 +161,15 @@ func runInit(_ *cobra.Command, _ []string) error {
 	updateSkillsGitignore()
 
 	// Inject forge section into CLAUDE.md
-	if err := ensureClaudeMDSection(skills); err != nil {
+	if err := ensureClaudeMDSectionAt("CLAUDE.md", skills); err != nil {
 		ui.Log.Warn(fmt.Sprintf("Could not update CLAUDE.md: %v", err))
 	}
 
 	return nil
 }
 
-// ensureClaudeMDSection adds or updates a forge section in the project's CLAUDE.md.
-func ensureClaudeMDSection(skills []resolve.SkillInfo) error {
-	claudeMD := "CLAUDE.md"
-
+// ensureClaudeMDSectionAt adds or updates a forge section in the given CLAUDE.md file.
+func ensureClaudeMDSectionAt(claudeMD string, skills []resolve.SkillInfo) error {
 	// Build the forge section
 	var sb strings.Builder
 	sb.WriteString(forgeMarkerBegin + "\n")

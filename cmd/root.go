@@ -20,6 +20,7 @@ Take it anywhere, use it in any project, add to it anytime.
 Getting started:
   forge setup       Create your personal toolkit at ~/.forge/
   forge init        Wire skills into the current project
+  forge init -g     Install skills globally (all sessions)
   forge list        See everything in your toolkit
 
 Managing tools:
