@@ -51,6 +51,13 @@ func init() {
 	addCmd.Flags().StringVar(&agentBody, "body", "", "Full markdown body for the agent")
 	agentCmd.AddCommand(addCmd)
 
+	agentCmd.AddCommand(&cobra.Command{
+		Use:   "remove [name]",
+		Short: "Remove an agent from your toolkit",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runAgentRemove,
+	})
+
 	rootCmd.AddCommand(agentCmd)
 }
 
@@ -128,6 +135,31 @@ func runAgentAdd(_ *cobra.Command, args []string) error {
 	commitAndPush(
 		filepath.Join("agents", name+".md"),
 		fmt.Sprintf("feat: add %s agent", name),
+	)
+	return nil
+}
+
+func runAgentRemove(_ *cobra.Command, args []string) error {
+	name := args[0]
+
+	if !resolve.IsSetup() {
+		return fmt.Errorf("forge not set up — run 'forge setup' first")
+	}
+
+	agentPath := filepath.Join(resolve.AgentsDir(), name+".md")
+	if !util.Exists(agentPath) {
+		return fmt.Errorf("agent %q not found", name)
+	}
+
+	if err := os.Remove(agentPath); err != nil {
+		return fmt.Errorf("failed to remove agent: %w", err)
+	}
+
+	ui.Log.Success(fmt.Sprintf("Removed agent: %s", name))
+
+	commitAndPush(
+		filepath.Join("agents", name+".md"),
+		fmt.Sprintf("feat: remove %s agent", name),
 	)
 	return nil
 }

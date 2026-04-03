@@ -52,6 +52,13 @@ func init() {
 	addCmd.Flags().StringVar(&skillBody, "body", "", "Full markdown body for the skill")
 	skillCmd.AddCommand(addCmd)
 
+	skillCmd.AddCommand(&cobra.Command{
+		Use:   "remove [name]",
+		Short: "Remove a skill from your toolkit",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runSkillRemove,
+	})
+
 	rootCmd.AddCommand(skillCmd)
 }
 
@@ -137,6 +144,34 @@ func runSkillAdd(_ *cobra.Command, args []string) error {
 	)
 
 	wireSkill(name)
+	return nil
+}
+
+func runSkillRemove(_ *cobra.Command, args []string) error {
+	name := args[0]
+
+	if !resolve.IsSetup() {
+		return fmt.Errorf("forge not set up — run 'forge setup' first")
+	}
+
+	skillDir := filepath.Join(resolve.SkillsDir(), name)
+	if !util.Exists(filepath.Join(skillDir, "SKILL.md")) {
+		return fmt.Errorf("skill %q not found", name)
+	}
+
+	if err := os.RemoveAll(skillDir); err != nil {
+		return fmt.Errorf("failed to remove skill: %w", err)
+	}
+
+	ui.Log.Success(fmt.Sprintf("Removed skill: %s", name))
+
+	// Remove symlink from current project if wired
+	unwireSkill(name)
+
+	commitAndPush(
+		filepath.Join("skills", name),
+		fmt.Sprintf("feat: remove %s skill", name),
+	)
 	return nil
 }
 

@@ -53,6 +53,24 @@ func wireSkill(name string) {
 	ui.Log.Step(fmt.Sprintf("Wired %s into project", name))
 }
 
+// unwireSkill removes a skill's symlink from the current project's .claude/skills/.
+// Only removes symlinks, not project-specific files.
+func unwireSkill(name string) {
+	if !isProjectInitialized() {
+		return
+	}
+
+	targetFile := filepath.Join(".claude", "skills", name, "SKILL.md")
+	targetDir := filepath.Join(".claude", "skills", name)
+
+	// Only remove if it's a symlink
+	if info, err := os.Lstat(targetFile); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		os.Remove(targetFile)
+		os.Remove(targetDir)
+		ui.Log.Step(fmt.Sprintf("Unwired %s from project", name))
+	}
+}
+
 // wireAllSkills symlinks all toolkit skills into the current project's .claude/skills/.
 // No-op if the project hasn't been initialized with forge init.
 func wireAllSkills() {
