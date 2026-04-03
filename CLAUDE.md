@@ -88,3 +88,31 @@ make ship                 # push → GitHub Action → goreleaser → brew upgra
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
+
+<!-- BEGIN FORGE INTEGRATION -->
+## Forge Toolkit
+
+This project uses [forge](https://github.com/samahlstrom/forge-cli) — a portable AI agent toolkit.
+Your personal toolkit lives at `~/.forge/` and is synced via `forge sync`.
+
+### CLI Commands
+
+```bash
+forge list              # See all skills and agents
+forge skill add <name>  # Create a new skill
+forge skill remove <name> # Remove a skill
+forge agent add <name>  # Create a new agent
+forge agent remove <name> # Remove an agent
+forge sync              # Pull/push toolkit changes
+forge get <repo> <name> # Pull a skill from any repo
+```
+
+### Available Skills
+
+- `/docx`
+- `/evaluate`
+- `/forge`
+- `/ingest`
+- `/skill-creator`
+
+<!-- END FORGE INTEGRATION -->
