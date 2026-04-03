@@ -4,12 +4,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/samahlstrom/forge-cli/internal/resolve"
 	"github.com/samahlstrom/forge-cli/internal/ui"
 
 	"github.com/spf13/cobra"
 )
+
+const forgeMarkerBegin = "<!-- BEGIN FORGE INTEGRATION -->"
+const forgeMarkerEnd = "<!-- END FORGE INTEGRATION -->"
 
 func init() {
 	rootCmd.AddCommand(&cobra.Command{
@@ -76,6 +80,86 @@ func runInit(_ *cobra.Command, _ []string) error {
 	fmt.Println()
 	if installed > 0 {
 		ui.Log.Info(fmt.Sprintf("%d skill(s) available as slash commands in Claude Code.", installed))
+	}
+
+	// Inject forge section into CLAUDE.md
+	if err := ensureClaudeMDSection(skills); err != nil {
+		ui.Log.Warn(fmt.Sprintf("Could not update CLAUDE.md: %v", err))
+	}
+
+	return nil
+}
+
+// ensureClaudeMDSection adds or updates a forge section in the project's CLAUDE.md.
+func ensureClaudeMDSection(skills []resolve.SkillInfo) error {
+	claudeMD := "CLAUDE.md"
+
+	// Build the forge section
+	var sb strings.Builder
+	sb.WriteString(forgeMarkerBegin + "\n")
+	sb.WriteString("## Forge Toolkit\n\n")
+	sb.WriteString("This project uses [forge](https://github.com/samahlstrom/forge-cli) — a portable AI agent toolkit.\n")
+	sb.WriteString("Your personal toolkit lives at `~/.forge/` and is synced via `forge sync`.\n\n")
+	sb.WriteString("### CLI Commands\n\n")
+	sb.WriteString("```bash\n")
+	sb.WriteString("forge list              # See all skills and agents\n")
+	sb.WriteString("forge skill add <name>  # Create a new skill\n")
+	sb.WriteString("forge skill remove <name> # Remove a skill\n")
+	sb.WriteString("forge agent add <name>  # Create a new agent\n")
+	sb.WriteString("forge agent remove <name> # Remove an agent\n")
+	sb.WriteString("forge sync              # Pull/push toolkit changes\n")
+	sb.WriteString("forge get <repo> <name> # Pull a skill from any repo\n")
+	sb.WriteString("```\n\n")
+
+	if len(skills) > 0 {
+		sb.WriteString("### Available Skills\n\n")
+		for _, s := range skills {
+			sb.WriteString(fmt.Sprintf("- `/%s`\n", s.Name))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(forgeMarkerEnd)
+	forgeSection := sb.String()
+
+	// Read existing CLAUDE.md or create one
+	existing := ""
+	if data, err := os.ReadFile(claudeMD); err == nil {
+		existing = string(data)
+	}
+
+	// Replace existing section or append
+	if strings.Contains(existing, forgeMarkerBegin) {
+		beginIdx := strings.Index(existing, forgeMarkerBegin)
+		endIdx := strings.Index(existing, forgeMarkerEnd)
+		if endIdx > beginIdx {
+			updated := existing[:beginIdx] + forgeSection + existing[endIdx+len(forgeMarkerEnd):]
+			if err := os.WriteFile(claudeMD, []byte(updated), 0o644); err != nil {
+				return err
+			}
+			ui.Log.Success("Updated forge section in CLAUDE.md")
+			return nil
+		}
+	}
+
+	// Append to existing or create new
+	content := existing
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	if content != "" {
+		content += "\n"
+	}
+	content += forgeSection + "\n"
+
+	if err := os.WriteFile(claudeMD, []byte(content), 0o644); err != nil {
+		return err
+	}
+
+	if existing == "" {
+		ui.Log.Success("Created CLAUDE.md with forge section")
+	} else {
+		ui.Log.Success("Added forge section to CLAUDE.md")
 	}
 	return nil
 }
