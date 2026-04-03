@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 
 	"github.com/samahlstrom/forge-cli/internal/resolve"
 	"github.com/samahlstrom/forge-cli/internal/ui"
@@ -18,13 +17,13 @@ func commitAndPush(relPath, commitMsg string) {
 		return
 	}
 
-	gitAdd := exec.Command("git", "-C", home, "add", relPath)
+	gitAdd := forgeGit(home, "add", relPath)
 	if err := gitAdd.Run(); err != nil {
 		ui.Log.Warn("Failed to stage — commit manually.")
 		return
 	}
 
-	gitCommit := exec.Command("git", "-C", home, "commit", "-m", commitMsg)
+	gitCommit := forgeGit(home, "commit", "-m", commitMsg)
 	gitCommit.Stdout = os.Stdout
 	gitCommit.Stderr = os.Stderr
 	if err := gitCommit.Run(); err != nil {
@@ -38,7 +37,7 @@ func commitAndPush(relPath, commitMsg string) {
 		return
 	}
 
-	gitPush := exec.Command("git", "-C", home, "push")
+	gitPush := forgeGit(home, "push")
 	gitPush.Stdout = os.Stdout
 	gitPush.Stderr = os.Stderr
 	if err := gitPush.Run(); err != nil {

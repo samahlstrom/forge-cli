@@ -135,6 +135,8 @@ func runSkillAdd(_ *cobra.Command, args []string) error {
 		filepath.Join("skills", name, "SKILL.md"),
 		fmt.Sprintf("feat: add %s skill", name),
 	)
+
+	wireSkill(name)
 	return nil
 }
 

@@ -3,8 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
-
 	"github.com/samahlstrom/forge-cli/internal/resolve"
 	"github.com/samahlstrom/forge-cli/internal/ui"
 
@@ -34,14 +32,28 @@ func runSync(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("no remote configured — add one with:\n  cd %s && git remote add origin <your-repo-url>", home)
 	}
 
+	// Pull remote changes first
 	ui.Log.Step("Pulling latest...")
-	cmd := exec.Command("git", "-C", home, "pull", "--ff-only")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	pull := forgeGit(home, "pull", "--ff-only")
+	pull.Stdout = os.Stdout
+	pull.Stderr = os.Stderr
+	if err := pull.Run(); err != nil {
 		return fmt.Errorf("git pull failed: %w", err)
 	}
 
+	// Push local changes
+	ui.Log.Step("Pushing local changes...")
+	push := forgeGit(home, "push")
+	push.Stdout = os.Stdout
+	push.Stderr = os.Stderr
+	if err := push.Run(); err != nil {
+		return fmt.Errorf("git push failed: %w", err)
+	}
+
 	ui.Log.Success("Toolkit synced.")
+
+	// Re-wire skills into current project if initialized
+	wireAllSkills()
+
 	return nil
 }

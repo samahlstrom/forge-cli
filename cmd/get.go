@@ -130,6 +130,8 @@ func pullSkill(tmpDir, name string) error {
 		filepath.Join("skills", name),
 		fmt.Sprintf("feat: add %s skill (from external repo)", name),
 	)
+
+	wireSkill(name)
 	return nil
 }
 
