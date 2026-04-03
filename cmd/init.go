@@ -49,12 +49,19 @@ func runInit(_ *cobra.Command, _ []string) error {
 			continue
 		}
 
+		// Don't overwrite project-specific (non-symlink) skills
+		if info, err := os.Lstat(targetFile); err == nil && info.Mode()&os.ModeSymlink == 0 {
+			ui.Log.Step(fmt.Sprintf("%s (project-specific, skipped)", skill.Name))
+			installed++
+			continue
+		}
+
 		if err := os.MkdirAll(targetDir, 0o755); err != nil {
 			ui.Log.Error(fmt.Sprintf("failed to create %s: %v", targetDir, err))
 			continue
 		}
 
-		// Remove existing file/symlink before creating new one
+		// Remove existing symlink before creating new one
 		os.Remove(targetFile)
 
 		if err := os.Symlink(skill.Path, targetFile); err != nil {

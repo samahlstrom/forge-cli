@@ -122,10 +122,22 @@ func freshSetup(home, ghUser string) error {
 }
 
 // cloneExistingToolkit clones the user's existing forge-toolkit repo to ~/.forge.
+// If ~/.forge/ already exists (e.g. manually created), it's moved aside first.
 func cloneExistingToolkit(home, ghUser string) error {
 	repoURL := fmt.Sprintf("https://github.com/%s/%s.git", ghUser, toolkitRepoName)
 
 	ui.Intro("Found your existing toolkit on GitHub")
+
+	// If the directory exists but isn't a proper toolkit, move it aside
+	if info, err := os.Stat(home); err == nil && info.IsDir() {
+		backup := home + ".bak"
+		ui.Log.Step(fmt.Sprintf("Moving existing %s to %s...", home, backup))
+		os.RemoveAll(backup) // remove previous backup if any
+		if err := os.Rename(home, backup); err != nil {
+			return fmt.Errorf("failed to move existing %s: %w", home, err)
+		}
+	}
+
 	ui.Log.Step(fmt.Sprintf("Cloning %s/%s...", ghUser, toolkitRepoName))
 
 	gitClone := exec.Command("git", "-c", "credential.helper=!gh auth git-credential", "clone", repoURL, home)

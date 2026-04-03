@@ -35,6 +35,11 @@ func wireSkill(name string) {
 		return
 	}
 
+	// Don't overwrite project-specific (non-symlink) skills
+	if info, err := os.Lstat(targetFile); err == nil && info.Mode()&os.ModeSymlink == 0 {
+		return
+	}
+
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return
 	}
@@ -66,6 +71,11 @@ func wireAllSkills() {
 			continue
 		}
 
+		// Don't overwrite project-specific (non-symlink) skills
+		if info, err := os.Lstat(targetFile); err == nil && info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+
 		if err := os.MkdirAll(targetDir, 0o755); err != nil {
 			continue
 		}
@@ -82,5 +92,38 @@ func wireAllSkills() {
 
 	if wired > 0 {
 		ui.Log.Success(fmt.Sprintf("%d new skill(s) wired into project.", wired))
+	}
+
+	// Clean up stale symlinks pointing to removed skills
+	pruneStaleSkills()
+}
+
+// pruneStaleSkills removes symlinks in .claude/skills/ that point to nonexistent targets.
+func pruneStaleSkills() {
+	skillsDir := filepath.Join(".claude", "skills")
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		targetFile := filepath.Join(skillsDir, entry.Name(), "SKILL.md")
+
+		// Only touch symlinks
+		info, err := os.Lstat(targetFile)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+
+		// Check if the symlink target exists
+		if _, err := os.Stat(targetFile); err != nil {
+			// Broken symlink — remove it and its directory
+			os.Remove(targetFile)
+			os.Remove(filepath.Join(skillsDir, entry.Name()))
+			ui.Log.Step(fmt.Sprintf("Removed stale link: %s", entry.Name()))
+		}
 	}
 }
