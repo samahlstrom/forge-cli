@@ -82,6 +82,9 @@ func runInit(_ *cobra.Command, _ []string) error {
 		ui.Log.Info(fmt.Sprintf("%d skill(s) available as slash commands in Claude Code.", installed))
 	}
 
+	// Gitignore symlinked skills so they don't get committed
+	updateSkillsGitignore()
+
 	// Inject forge section into CLAUDE.md
 	if err := ensureClaudeMDSection(skills); err != nil {
 		ui.Log.Warn(fmt.Sprintf("Could not update CLAUDE.md: %v", err))

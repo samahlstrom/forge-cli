@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/samahlstrom/forge-cli/internal/resolve"
 	"github.com/samahlstrom/forge-cli/internal/ui"
@@ -51,6 +53,7 @@ func wireSkill(name string) {
 	}
 
 	ui.Log.Step(fmt.Sprintf("Wired %s into project", name))
+	updateSkillsGitignore()
 }
 
 // unwireSkill removes a skill's symlink from the current project's .claude/skills/.
@@ -69,6 +72,7 @@ func unwireSkill(name string) {
 		os.Remove(targetDir)
 		ui.Log.Step(fmt.Sprintf("Unwired %s from project", name))
 	}
+	updateSkillsGitignore()
 }
 
 // wireAllSkills symlinks all toolkit skills into the current project's .claude/skills/.
@@ -114,6 +118,9 @@ func wireAllSkills() {
 
 	// Clean up stale symlinks pointing to removed skills
 	pruneStaleSkills()
+
+	// Update gitignore for symlinked skills
+	updateSkillsGitignore()
 }
 
 // pruneStaleSkills removes symlinks in .claude/skills/ that point to nonexistent targets.
@@ -144,4 +151,49 @@ func pruneStaleSkills() {
 			ui.Log.Step(fmt.Sprintf("Removed stale link: %s", entry.Name()))
 		}
 	}
+}
+
+// updateSkillsGitignore scans .claude/skills/ for symlinked entries and writes
+// a .gitignore that ignores them. Project-specific (non-symlink) skills are NOT
+// ignored, so they can be committed normally.
+func updateSkillsGitignore() {
+	skillsDir := filepath.Join(".claude", "skills")
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return
+	}
+
+	var symlinked []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		targetFile := filepath.Join(skillsDir, entry.Name(), "SKILL.md")
+		info, err := os.Lstat(targetFile)
+		if err != nil {
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			symlinked = append(symlinked, entry.Name())
+		}
+	}
+
+	gitignorePath := filepath.Join(skillsDir, ".gitignore")
+
+	if len(symlinked) == 0 {
+		// No symlinks — remove gitignore if it's ours
+		os.Remove(gitignorePath)
+		return
+	}
+
+	sort.Strings(symlinked)
+
+	var sb strings.Builder
+	sb.WriteString("# Forge-managed symlinks (personal toolkit — don't commit)\n")
+	sb.WriteString("# Run 'forge init' to recreate these on your machine\n")
+	for _, name := range symlinked {
+		sb.WriteString(name + "/\n")
+	}
+
+	os.WriteFile(gitignorePath, []byte(sb.String()), 0o644)
 }
