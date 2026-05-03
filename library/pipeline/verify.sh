@@ -9,11 +9,21 @@ CONFIG_FILE="${CONFIG_FILE:-forge.yaml}"
 
 TASK_ID="${1:-}"
 TIER="${2:-T1}"
+BEHAVIOR_CHANGE="${3:-false}"
 
 if [[ -z "$TASK_ID" ]]; then
-  echo '{"error":"Usage: verify.sh <task-id> <tier>"}' >&2
+  echo '{"error":"Usage: verify.sh <task-id> <tier> <behavior_change>"}' >&2
   exit 1
 fi
+
+# Normalize behavior_change to lowercase boolean string
+case "$BEHAVIOR_CHANGE" in
+  true|TRUE|True|1|yes) BEHAVIOR_CHANGE="true" ;;
+  *) BEHAVIOR_CHANGE="false" ;;
+esac
+
+# Resolve forge pipeline dir (where this script lives)
+PIPELINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- Config reading ---
 
@@ -138,6 +148,16 @@ fi
 # 6. Anti-pattern check (optional)
 if [[ "$PASSED" == "true" && "$ENABLE_ANTIPATTERN" == "true" ]]; then
   run_check "antipatterns" "$CMD_ANTIPATTERN" "false" || true
+fi
+
+# 6a. Banned test patterns (required for behavior changes)
+if [[ "$PASSED" == "true" && "$BEHAVIOR_CHANGE" == "true" ]]; then
+  run_check "banned-patterns" "bash ${PIPELINE_DIR}/banned-patterns.sh" "true" || true
+fi
+
+# 6b. Redline test verifier (required for behavior changes)
+if [[ "$PASSED" == "true" && "$BEHAVIOR_CHANGE" == "true" ]]; then
+  run_check "redline" "bash ${PIPELINE_DIR}/redline-check.sh ${TASK_ID}" "true" || true
 fi
 
 # 7. Browser smoke tests (enabled by default for frontend changes)

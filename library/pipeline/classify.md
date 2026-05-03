@@ -62,6 +62,30 @@ Assign T1 if the task involves ONLY:
 3. **Read the actual description.** "Add token refresh" could be T3 (auth tokens) or T1 (loading spinner animation). Use context.
 4. **One line of reasoning.** Explain WHY, not just WHAT you matched.
 
+## Behavior Change Flag
+
+In addition to the tier, you must determine whether this task is a **behavior change**. Set `behavior_change=true` if any of the following is true:
+
+- The task changes how the system responds to a given input (new feature, bug fix that changes outputs, new validation rule, new state transition)
+- The task adds or modifies an API endpoint, route, server action, RPC handler, or message consumer
+- The task adds or modifies an invariant, business rule, or workflow
+- The task changes a side effect the system performs (notification, write, event emission)
+- The task changes user-observable rendered behavior (not styling — actual interaction outcomes)
+- Tier is T2 or T3 (auth, data mutation, business logic — these always change behavior)
+
+Set `behavior_change=false` only when the task is purely:
+
+- Styling, CSS, color, font, spacing changes
+- Documentation, README, comments, changelogs
+- Code reformatting, renames with no semantic change
+- Linter/formatter/config rule changes that do not alter program behavior
+- Dependency bumps with no API surface change
+- Pure refactoring that preserves all existing behavior (rare — when in doubt, set true)
+
+**When ambiguous, set `behavior_change=true`.** The cost of an unnecessary redline test is low; the cost of skipping the test-first discipline on a real behavior change is high.
+
+The `behavior_change` flag activates the strict Red-Green-Refactor cycle and the Wave-0 Quality agent in `forge`. It is independent of the tier — a T1 styling-tier change can still be a behavior change if, for example, a CSS rule controls click-target reachability.
+
 ## Output
 
 Write ONLY this JSON to stdout — no markdown fences, no extra text:
@@ -69,6 +93,7 @@ Write ONLY this JSON to stdout — no markdown fences, no extra text:
 ```json
 {
   "tier": "T1|T2|T3",
-  "reason": "One sentence explaining why this tier was assigned"
+  "behavior_change": true,
+  "reason": "One sentence explaining the tier and the behavior_change flag"
 }
 ```

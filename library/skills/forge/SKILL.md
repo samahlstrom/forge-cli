@@ -101,18 +101,64 @@ Apply the rules yourself — this is a language task, no agent needed:
 - **T3 wins**: if ANY part is T3, the whole task is T3
 - **When ambiguous, go up**: T1↔T2 → pick T2, T2↔T3 → pick T3
 
+Then determine `behavior_change` per the rules in `<pipeline_dir>/classify.md` § Behavior Change Flag. When ambiguous, set `behavior_change=true`.
+
 Write your classification to `<runs_dir>/<task_id>/classification.json`:
 ```json
-{"tier": "T1|T2|T3", "reason": "One sentence explaining why"}
+{"tier": "T1|T2|T3", "behavior_change": true|false, "reason": "One sentence explaining tier and behavior_change"}
 ```
 
-Label the bead: `Bash("bd update <task_id> --add-label 'tier:<tier>'")`
+Label the bead:
+```
+Bash("bd update <task_id> --add-label 'tier:<tier>'")
+Bash("bd update <task_id> --add-label 'behavior:<true|false>'")
+```
 
 ## Step 4: Mode Check
 
-If `mode` is `quick` or `hotfix`: **skip to Step 8**.
+`mode` (`quick`/`hotfix`/full) controls decomposition and tri-agent evaluation. It does **not** control the test-first requirement.
 
-All other modes proceed through full decomposition and review.
+- If `mode` is `quick` or `hotfix` AND `behavior_change` is `false`: **skip to Step 8** (no Wave 0, no decomposition, no evaluation).
+- If `mode` is `quick` or `hotfix` AND `behavior_change` is `true`: run **Step 4.5 (Wave 0)** then skip directly to Step 8 (no decomposition, no evaluation, but the redline test is still authored and verified).
+- All other modes proceed through Wave 0 then full decomposition and review.
+
+The redline test is never skipped for a behavior change. This is non-negotiable doctrine (see `<library_dir>/doctrine/tdd.md`).
+
+## Step 4.5: Wave 0 — Quality Writes the Redline Test
+
+**Run this step whenever `behavior_change=true`, regardless of mode.**
+
+Dispatch the Quality agent **before** any builder agent runs:
+
+```
+Agent (model: sonnet):
+"You are the Quality agent operating as Wave 0. Read and follow <agents_dir>/quality.md.
+Read doctrine: <library_dir>/doctrine/tdd.md.
+Task: bd show <task_id>
+Project context: <context_dir>/stack.md, <context_dir>/project.md (read if present)
+
+Your job in this wave:
+1. Identify the System Under Test (SUT) for the requirement.
+2. Write ONE failing behavior test at the SUT's public surface.
+3. Run the project's test command and capture the failure output.
+4. Confirm the failure is for the intended reason (missing behavior, not typo).
+5. Write the failure output to <runs_dir>/<task_id>/redline-wave0.txt — this is the redline artifact.
+6. Write your JSON report to <runs_dir>/<task_id>/reports/wave0-quality.json.
+
+Do NOT write implementation. That is the builder's job in subsequent waves.
+Follow the Agent Contract: OPEN → WORK → REPORT → CLOSE."
+```
+
+After the agent returns:
+
+1. Read `<runs_dir>/<task_id>/reports/wave0-quality.json`.
+2. Verify `status` is `complete`, `test_count` >= 1, and `redline_artifact` points to a file that exists and is non-empty.
+3. Verify `redline_failure_reason` describes a missing behavior, not just a missing function/symbol. If it only says "function does not exist" or similar, the test is structural — reject and re-dispatch with revision instructions.
+4. If verification fails: re-dispatch up to twice with the failure as additional context. After 3 total attempts, close the task with `bd close <task_id> --reason "Wave 0 redline test could not be authored"` and stop.
+
+Once the redline is accepted, store its path in pipeline state for use in Step 8 verification.
+
+If `mode` is `quick` or `hotfix`: skip directly to **Step 7** (execute waves) using a one-wave manifest where every builder subtask is gated on the redline test passing. Do not run decomposition or plan review.
 
 ## Step 5: Decompose + Security
 
@@ -239,16 +285,27 @@ Write both files to the task's run directory.
 
 ## Step 8: Verify
 
-Run mechanical verification:
+Run mechanical verification — pass `behavior_change` so the verifier knows whether to enforce the redline check:
 ```
-Bash("bash <pipeline_dir>/verify.sh <task_id> <tier>")
+Bash("bash <pipeline_dir>/verify.sh <task_id> <tier> <behavior_change>")
 ```
+
+The verifier runs (in order, stopping on first required failure):
+
+1. **typecheck** (required)
+2. **lint** (required)
+3. **test** (required) — the project's full test suite, including the Wave-0 redline test now in its passing state
+4. **banned-patterns** (required for `behavior_change=true`) — calls `<pipeline_dir>/banned-patterns.sh` to grep all `**/*.{test,spec}.*` files in the diff for forbidden assertions and scaffolding shapes (see `<library_dir>/doctrine/tdd.md` § Banned Test Patterns)
+5. **redline** (required for `behavior_change=true`) — calls `<pipeline_dir>/redline-check.sh` to verify the Wave-0 redline test transitioned red→green between the parent commit and HEAD
+6. coverage / security / browser smoke (configured per project)
 
 Read the JSON output. If `passed` is false:
 - Close the task bead: `Bash("bd close <task_id> --reason 'Verification failed: <failed_check>'")`
 - Also close any open subtask beads: for each subtask bead that wasn't already closed, run `bd close <bead_id> --reason "Parent task verification failed"`
 - Report the failed check and stderr to the user
 - Stop the pipeline (user needs to fix and `/forge --resume <task_id>`)
+
+A failure of `banned-patterns` or `redline` is a doctrine violation. The user message must include a link to `<library_dir>/doctrine/tdd.md` and the specific banned pattern or missing redline.
 
 If `mode` is `quick` or `hotfix`: **skip to Step 11**.
 
