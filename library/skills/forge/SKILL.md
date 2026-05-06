@@ -29,6 +29,23 @@ This returns JSON with all resolved directories. Store these values and use them
 
 **Agents are discovered dynamically**: list `<agents_dir>/*.md` to see what's available. New agents added via `forge agent add` are immediately usable.
 
+### Architecture Scan (MUST run before any work)
+
+Before intake, scan the project root for architecture documentation and load it into context:
+
+```
+Bash("ls ARCHITECTURE.md architecture.md docs/ARCHITECTURE.md docs/architecture.md .forge/context/architecture.md 2>/dev/null")
+```
+
+For every file that exists, `Read` it in full. Capture the absolute paths into `architecture_docs[]`.
+
+**If any architecture doc is found:**
+- Treat it as authoritative for module boundaries, layering rules, naming conventions, and tech choices. Do not violate documented constraints without explicit user approval.
+- Pass `architecture_docs[]` to every dispatched agent (Architect, Security, executors, evaluators) as required reading alongside `<context_dir>/stack.md` and `<context_dir>/project.md`.
+- The Architect MUST cite which sections of the architecture doc shaped the decomposition. The Plan Reviewer MUST flag any subtask that conflicts with the documented architecture as `revise`.
+
+**If none is found:** record `architecture_docs = []` and continue. Do not block on missing docs.
+
 **DO NOT:**
 - Skip stages (intake → classify → decompose → review-plan → execute → verify → evaluate → deliver)
 - Write code without going through decompose → review-plan → execute
@@ -174,7 +191,7 @@ Then for each agent, read the YAML frontmatter to get `id`, `specializes`, `good
 ```
 "You are the Architect agent. Read and follow <agents_dir>/architect.md.
 Task: bd show <task_id>
-Read context: <context_dir>/stack.md, <context_dir>/project.md
+Read context: <context_dir>/stack.md, <context_dir>/project.md, <each path in architecture_docs[]>
 Write your execution manifest JSON to <runs_dir>/<task_id>/decomposition.json
 
 Available agents for subtask assignment (each maps to <agents_dir>/<name>.md):
@@ -188,7 +205,7 @@ Follow the Agent Contract: OPEN → WORK → REPORT → CLOSE."
 ```
 "You are the Security agent. Read and follow <agents_dir>/security.md.
 Task: bd show <task_id>
-Read context: <context_dir>/stack.md, <context_dir>/project.md
+Read context: <context_dir>/stack.md, <context_dir>/project.md, <each path in architecture_docs[]>
 Analyze security implications. Output risk annotations JSON to
 <runs_dir>/<task_id>/security-annotations.json
 Follow the Agent Contract: OPEN → WORK → REPORT → CLOSE."
@@ -206,7 +223,7 @@ Dispatch the plan reviewer:
 ```
 Agent (model: sonnet): "You are the Plan Reviewer. Read and follow <pipeline_dir>/review-plan.md.
 Review the decomposition at <runs_dir>/<task_id>/decomposition.json.
-Read context: <context_dir>/stack.md, <context_dir>/project.md.
+Read context: <context_dir>/stack.md, <context_dir>/project.md, <each path in architecture_docs[]>.
 Write your review JSON to <runs_dir>/<task_id>/plan-review.json.
 Follow the Agent Contract: OPEN → WORK → REPORT → CLOSE."
 ```
@@ -243,7 +260,8 @@ Only modify these files.
 
 Verification: <subtask verification>
 
-Project context: <context_dir>/stack.md, <context_dir>/project.md
+Project context: <context_dir>/stack.md, <context_dir>/project.md, <each path in architecture_docs[]>
+If architecture docs are listed, treat them as authoritative — do not violate documented module boundaries, layering rules, or tech choices.
 
 <If revision iteration: include revision_brief from latest evaluation>
 
@@ -324,7 +342,8 @@ Dispatch THREE evaluators in parallel (single message, three Agent tool calls):
 "You are Edgar. Read and follow <agents_dir>/edgar.md.
 Evaluate the diff at <runs_dir>/<task_id>/eval-<iteration>-diff.patch.
 Read execution summary at <runs_dir>/<task_id>/execution.json.
-Context: <context_dir>/stack.md, <context_dir>/project.md.
+Context: <context_dir>/stack.md, <context_dir>/project.md, <each path in architecture_docs[]>.
+If architecture docs are present, score the diff against them — flag any violation of documented architecture as a critical finding.
 Write your JSON report to <runs_dir>/<task_id>/reports/eval-<iteration>-edgar.json.
 Follow the Agent Contract: OPEN → WORK → REPORT → CLOSE."
 ```
