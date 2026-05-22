@@ -160,6 +160,9 @@ func runInitLocal(skills []resolve.SkillInfo) error {
 	// Gitignore symlinked skills so they don't get committed
 	updateSkillsGitignore()
 
+	// Symlink global agents.md into project root
+	ensureAgentsMDLink()
+
 	// Inject forge section into CLAUDE.md
 	if err := ensureClaudeMDSectionAt("CLAUDE.md", skills); err != nil {
 		ui.Log.Warn(fmt.Sprintf("Could not update CLAUDE.md: %v", err))
@@ -168,35 +171,35 @@ func runInitLocal(skills []resolve.SkillInfo) error {
 	return nil
 }
 
-// ensureClaudeMDSectionAt adds or updates a forge section in the given CLAUDE.md file.
-func ensureClaudeMDSectionAt(claudeMD string, skills []resolve.SkillInfo) error {
-	// Build the forge section
-	var sb strings.Builder
-	sb.WriteString(forgeMarkerBegin + "\n")
-	sb.WriteString("## Forge Toolkit\n\n")
-	sb.WriteString("This project uses [forge](https://github.com/samahlstrom/forge-cli) — a portable AI agent toolkit.\n")
-	sb.WriteString("Your personal toolkit lives at `~/.forge/` and is synced via `forge sync`.\n\n")
-	sb.WriteString("### CLI Commands\n\n")
-	sb.WriteString("```bash\n")
-	sb.WriteString("forge list              # See all skills and agents\n")
-	sb.WriteString("forge skill add <name>  # Create a new skill\n")
-	sb.WriteString("forge skill remove <name> # Remove a skill\n")
-	sb.WriteString("forge agent add <name>  # Create a new agent\n")
-	sb.WriteString("forge agent remove <name> # Remove an agent\n")
-	sb.WriteString("forge sync              # Pull/push toolkit changes\n")
-	sb.WriteString("forge get <repo> <name> # Pull a skill from any repo\n")
-	sb.WriteString("```\n\n")
+// ensureAgentsMDLink symlinks ~/.forge/agents.md → ./agents.md if not already present.
+func ensureAgentsMDLink() {
+	globalAgentsMD := filepath.Join(resolve.ForgeHome(), "agents.md")
+	localAgentsMD := "agents.md"
 
-	if len(skills) > 0 {
-		sb.WriteString("### Available Skills\n\n")
-		for _, s := range skills {
-			sb.WriteString(fmt.Sprintf("- `/%s`\n", s.Name))
-		}
-		sb.WriteString("\n")
+	if _, err := os.Stat(globalAgentsMD); err != nil {
+		return // global agents.md doesn't exist yet — forge sync will create it
 	}
+	if dest, err := os.Readlink(localAgentsMD); err == nil && dest == globalAgentsMD {
+		ui.Log.Step("agents.md (already linked)")
+		return
+	}
+	if info, err := os.Lstat(localAgentsMD); err == nil && info.Mode()&os.ModeSymlink == 0 {
+		ui.Log.Step("agents.md (project-specific, skipped)")
+		return
+	}
+	os.Remove(localAgentsMD)
+	if err := os.Symlink(globalAgentsMD, localAgentsMD); err != nil {
+		ui.Log.Warn(fmt.Sprintf("Could not link agents.md: %v", err))
+		return
+	}
+	ui.Log.Success(fmt.Sprintf("agents.md → %s", ui.Dim(globalAgentsMD)))
+}
 
-	sb.WriteString(forgeMarkerEnd)
-	forgeSection := sb.String()
+// ensureClaudeMDSectionAt adds or updates a forge section in the given CLAUDE.md file.
+// The section is kept minimal — just an @agents.md import that auto-loads the skill manifest.
+func ensureClaudeMDSectionAt(claudeMD string, _ []resolve.SkillInfo) error {
+	// Minimal forge section: just the @agents.md import
+	forgeSection := forgeMarkerBegin + "\n@agents.md\n" + forgeMarkerEnd
 
 	// Read existing CLAUDE.md or create one
 	existing := ""
@@ -204,7 +207,7 @@ func ensureClaudeMDSectionAt(claudeMD string, skills []resolve.SkillInfo) error 
 		existing = string(data)
 	}
 
-	// Replace existing section or append
+	// Replace existing section
 	if strings.Contains(existing, forgeMarkerBegin) {
 		beginIdx := strings.Index(existing, forgeMarkerBegin)
 		endIdx := strings.Index(existing, forgeMarkerEnd)
@@ -213,29 +216,25 @@ func ensureClaudeMDSectionAt(claudeMD string, skills []resolve.SkillInfo) error 
 			if err := os.WriteFile(claudeMD, []byte(updated), 0o644); err != nil {
 				return err
 			}
-			ui.Log.Success("Updated forge section in CLAUDE.md")
+			ui.Log.Success("Updated CLAUDE.md (@agents.md import)")
 			return nil
 		}
 	}
 
-	// Append to existing or create new
-	content := existing
-	if content != "" && !strings.HasSuffix(content, "\n") {
-		content += "\n"
+	// Prepend — @agents.md must load first so all agents get the toolkit manifest
+	content := forgeSection + "\n"
+	if existing != "" {
+		content += "\n" + existing
 	}
-	if content != "" {
-		content += "\n"
-	}
-	content += forgeSection + "\n"
 
 	if err := os.WriteFile(claudeMD, []byte(content), 0o644); err != nil {
 		return err
 	}
 
 	if existing == "" {
-		ui.Log.Success("Created CLAUDE.md with forge section")
+		ui.Log.Success("Created CLAUDE.md with @agents.md import")
 	} else {
-		ui.Log.Success("Added forge section to CLAUDE.md")
+		ui.Log.Success("Prepended @agents.md import to CLAUDE.md")
 	}
 	return nil
 }

@@ -1,0 +1,88 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "excalidraw.com",
+  "elements": [
+    {"type":"text","id":"title","x":30,"y":10,"width":420,"height":30,"text":"Forge Pipeline — Current State (v1)","fontSize":22,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"left","verticalAlign":"top"},
+
+    {"type":"rectangle","id":"r1","x":50,"y":60,"width":240,"height":48,"backgroundColor":"#a5d8ff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#4a9eed","strokeWidth":2,"boundElements":[{"id":"t1","type":"text"}]},
+    {"type":"text","id":"t1","x":50,"y":76,"width":240,"height":20,"text":"1. Intake","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r1"},
+    {"type":"arrow","id":"a1","x":170,"y":108,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r2","x":50,"y":126,"width":240,"height":48,"backgroundColor":"#a5d8ff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#4a9eed","strokeWidth":2,"boundElements":[{"id":"t2","type":"text"}]},
+    {"type":"text","id":"t2","x":50,"y":142,"width":240,"height":20,"text":"2. Create Task (bead)","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r2"},
+    {"type":"arrow","id":"a2","x":170,"y":174,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r3","x":50,"y":192,"width":240,"height":48,"backgroundColor":"#a5d8ff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#4a9eed","strokeWidth":2,"boundElements":[{"id":"t3","type":"text"}]},
+    {"type":"text","id":"t3","x":50,"y":208,"width":240,"height":20,"text":"3. Classify Risk (T1/T2/T3)","fontSize":15,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r3"},
+    {"type":"arrow","id":"a3","x":170,"y":240,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r4","x":50,"y":258,"width":240,"height":48,"backgroundColor":"#fff3bf","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#f59e0b","strokeWidth":2,"boundElements":[{"id":"t4","type":"text"}]},
+    {"type":"text","id":"t4","x":50,"y":274,"width":240,"height":20,"text":"4. Mode Check","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r4"},
+    {"type":"arrow","id":"a4","x":170,"y":306,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r5","x":50,"y":324,"width":240,"height":48,"backgroundColor":"#d0bfff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#8b5cf6","strokeWidth":2,"boundElements":[{"id":"t5","type":"text"}]},
+    {"type":"text","id":"t5","x":50,"y":340,"width":240,"height":20,"text":"5. Decompose + Security","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r5"},
+    {"type":"text","id":"ann1","x":315,"y":330,"width":280,"height":40,"text":"PROBLEM: No design prototype\nbefore implementation begins","fontSize":13,"fontFamily":1,"strokeColor":"#ef4444","textAlign":"left","verticalAlign":"top"},
+    {"type":"arrow","id":"aa1","x":313,"y":348,"width":18,"height":0,"points":[[0,0],[-18,0]],"endArrowhead":"arrow","strokeColor":"#ef4444","strokeWidth":1},
+    {"type":"arrow","id":"a5","x":170,"y":372,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r6","x":50,"y":390,"width":240,"height":48,"backgroundColor":"#a5d8ff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#4a9eed","strokeWidth":2,"boundElements":[{"id":"t6","type":"text"}]},
+    {"type":"text","id":"t6","x":50,"y":406,"width":240,"height":20,"text":"6. Review Plan","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r6"},
+    {"type":"arrow","id":"a6","x":170,"y":438,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r7","x":50,"y":456,"width":240,"height":48,"backgroundColor":"#d0bfff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#8b5cf6","strokeWidth":2,"boundElements":[{"id":"t7","type":"text"}]},
+    {"type":"text","id":"t7","x":50,"y":472,"width":240,"height":20,"text":"7. Execute Waves (TDD)","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r7"},
+    {"type":"text","id":"ann2","x":315,"y":456,"width":280,"height":40,"text":"PROBLEM: TDD Wave 0 exists but\nnot contextually enforced (TDAD gap)","fontSize":13,"fontFamily":1,"strokeColor":"#ef4444","textAlign":"left","verticalAlign":"top"},
+    {"type":"arrow","id":"aa2","x":313,"y":474,"width":18,"height":0,"points":[[0,0],[-18,0]],"endArrowhead":"arrow","strokeColor":"#ef4444","strokeWidth":1},
+    {"type":"arrow","id":"a7","x":170,"y":504,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r8","x":50,"y":522,"width":240,"height":48,"backgroundColor":"#a5d8ff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#4a9eed","strokeWidth":2,"boundElements":[{"id":"t8","type":"text"}]},
+    {"type":"text","id":"t8","x":50,"y":538,"width":240,"height":20,"text":"8. Verify (mechanical)","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r8"},
+    {"type":"arrow","id":"a8","x":170,"y":570,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r85","x":50,"y":588,"width":240,"height":48,"backgroundColor":"#ffd8a8","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#f59e0b","strokeWidth":2,"boundElements":[{"id":"t85","type":"text"}]},
+    {"type":"text","id":"t85","x":50,"y":605,"width":240,"height":20,"text":"8.5. Visual Verify (Playwright)","fontSize":15,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r85"},
+    {"type":"text","id":"ann3","x":315,"y":586,"width":280,"height":40,"text":"PROBLEM: No reference target.\nAgent self-grades on vibes.","fontSize":13,"fontFamily":1,"strokeColor":"#ef4444","textAlign":"left","verticalAlign":"top"},
+    {"type":"arrow","id":"aa3","x":313,"y":608,"width":18,"height":0,"points":[[0,0],[-18,0]],"endArrowhead":"arrow","strokeColor":"#ef4444","strokeWidth":1},
+    {"type":"text","id":"ann4","x":315,"y":638,"width":280,"height":20,"text":"MISSING: No Lighthouse gate","fontSize":13,"fontFamily":1,"strokeColor":"#ef4444","textAlign":"left","verticalAlign":"top"},
+    {"type":"arrow","id":"a85","x":170,"y":636,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r9","x":50,"y":654,"width":240,"height":48,"backgroundColor":"#d0bfff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#8b5cf6","strokeWidth":2,"boundElements":[{"id":"t9","type":"text"}]},
+    {"type":"text","id":"t9","x":50,"y":668,"width":240,"height":20,"text":"9. Evaluate (Edgar x3)","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r9"},
+    {"type":"text","id":"ann5","x":315,"y":652,"width":280,"height":40,"text":"PROBLEM: Edgar only at end.\nWrong approach caught too late.","fontSize":13,"fontFamily":1,"strokeColor":"#ef4444","textAlign":"left","verticalAlign":"top"},
+    {"type":"arrow","id":"aa5","x":313,"y":672,"width":18,"height":0,"points":[[0,0],[-18,0]],"endArrowhead":"arrow","strokeColor":"#ef4444","strokeWidth":1},
+    {"type":"arrow","id":"a9","x":170,"y":702,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r10","x":50,"y":720,"width":240,"height":48,"backgroundColor":"#fff3bf","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#f59e0b","strokeWidth":2,"boundElements":[{"id":"t10","type":"text"}]},
+    {"type":"text","id":"t10","x":50,"y":737,"width":240,"height":20,"text":"10. Verdict (composite >= 0.7)","fontSize":15,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r10"},
+    {"type":"text","id":"ann6","x":315,"y":720,"width":280,"height":40,"text":"PROBLEM: No check that original\ngoals were actually accomplished.","fontSize":13,"fontFamily":1,"strokeColor":"#ef4444","textAlign":"left","verticalAlign":"top"},
+    {"type":"arrow","id":"aa6","x":313,"y":744,"width":18,"height":0,"points":[[0,0],[-18,0]],"endArrowhead":"arrow","strokeColor":"#ef4444","strokeWidth":1},
+    {"type":"arrow","id":"a10","x":170,"y":768,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r11","x":50,"y":786,"width":240,"height":48,"backgroundColor":"#b2f2bb","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#22c55e","strokeWidth":2,"boundElements":[{"id":"t11","type":"text"}]},
+    {"type":"text","id":"t11","x":50,"y":802,"width":240,"height":20,"text":"11. Deliver","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r11"},
+    {"type":"arrow","id":"a11","x":170,"y":834,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r12","x":50,"y":852,"width":240,"height":48,"backgroundColor":"#b2f2bb","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#22c55e","strokeWidth":2,"boundElements":[{"id":"t12","type":"text"}]},
+    {"type":"text","id":"t12","x":50,"y":868,"width":240,"height":20,"text":"12. Deliver to Main","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r12"},
+    {"type":"arrow","id":"a12","x":170,"y":900,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r13","x":50,"y":918,"width":240,"height":48,"backgroundColor":"#b2f2bb","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#22c55e","strokeWidth":2,"boundElements":[{"id":"t13","type":"text"}]},
+    {"type":"text","id":"t13","x":50,"y":934,"width":240,"height":20,"text":"13. Report + Close","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r13"},
+
+    {"type":"text","id":"leg0","x":30,"y":990,"width":200,"height":22,"text":"Legend:","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"left","verticalAlign":"top"},
+    {"type":"rectangle","id":"lg1","x":30,"y":1016,"width":20,"height":14,"backgroundColor":"#a5d8ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":1},
+    {"type":"text","id":"lt1","x":56,"y":1013,"width":200,"height":18,"text":"Standard step","fontSize":13,"fontFamily":1,"strokeColor":"#555","textAlign":"left","verticalAlign":"top"},
+    {"type":"rectangle","id":"lg2","x":30,"y":1036,"width":20,"height":14,"backgroundColor":"#d0bfff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":1},
+    {"type":"text","id":"lt2","x":56,"y":1033,"width":200,"height":18,"text":"Parallel / complex step","fontSize":13,"fontFamily":1,"strokeColor":"#555","textAlign":"left","verticalAlign":"top"},
+    {"type":"rectangle","id":"lg3","x":30,"y":1056,"width":20,"height":14,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":1},
+    {"type":"text","id":"lt3","x":56,"y":1053,"width":200,"height":18,"text":"Browser / visual step","fontSize":13,"fontFamily":1,"strokeColor":"#555","textAlign":"left","verticalAlign":"top"},
+    {"type":"rectangle","id":"lg4","x":30,"y":1076,"width":20,"height":14,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":1},
+    {"type":"text","id":"lt4","x":56,"y":1073,"width":200,"height":18,"text":"Decision point","fontSize":13,"fontFamily":1,"strokeColor":"#555","textAlign":"left","verticalAlign":"top"},
+    {"type":"rectangle","id":"lg5","x":30,"y":1096,"width":20,"height":14,"backgroundColor":"#b2f2bb","fillStyle":"solid","strokeColor":"#22c55e","strokeWidth":1},
+    {"type":"text","id":"lt5","x":56,"y":1093,"width":200,"height":18,"text":"Delivery step","fontSize":13,"fontFamily":1,"strokeColor":"#555","textAlign":"left","verticalAlign":"top"}
+  ],
+  "appState": {"gridSize": null,"viewBackgroundColor":"#ffffff"},
+  "files": {}
+}

@@ -1,0 +1,113 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "excalidraw.com",
+  "elements": [
+    {"type":"text","id":"title","x":30,"y":10,"width":440,"height":30,"text":"Forge Pipeline — Proposed (v2)","fontSize":22,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"left","verticalAlign":"top"},
+
+    {"type":"rectangle","id":"r0","x":50,"y":60,"width":240,"height":48,"backgroundColor":"#c3fae8","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#06b6d4","strokeWidth":2,"boundElements":[{"id":"t0","type":"text"}]},
+    {"type":"text","id":"t0","x":50,"y":75,"width":240,"height":20,"text":"0. Arch + Design Scan (enhanced)","fontSize":13,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r0"},
+    {"type":"text","id":"an0","x":315,"y":60,"width":280,"height":40,"text":"Now reads DESIGN.md too.\nBoth docs authoritative for all agents.","fontSize":13,"fontFamily":1,"strokeColor":"#06b6d4","textAlign":"left","verticalAlign":"top"},
+    {"type":"arrow","id":"ar0","x":313,"y":78,"width":18,"height":0,"points":[[0,0],[-18,0]],"endArrowhead":"arrow","strokeColor":"#06b6d4","strokeWidth":1},
+    {"type":"arrow","id":"a01","x":170,"y":108,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r1","x":50,"y":126,"width":240,"height":48,"backgroundColor":"#a5d8ff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#4a9eed","strokeWidth":2,"boundElements":[{"id":"t1","type":"text"}]},
+    {"type":"text","id":"t1","x":50,"y":142,"width":240,"height":20,"text":"1. Intake","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r1"},
+    {"type":"arrow","id":"a12","x":170,"y":174,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r2","x":50,"y":192,"width":240,"height":48,"backgroundColor":"#a5d8ff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#4a9eed","strokeWidth":2,"boundElements":[{"id":"t2","type":"text"}]},
+    {"type":"text","id":"t2","x":50,"y":208,"width":240,"height":20,"text":"2. Create Task (bead)","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r2"},
+    {"type":"arrow","id":"a23","x":170,"y":240,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r3","x":50,"y":258,"width":240,"height":48,"backgroundColor":"#a5d8ff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#4a9eed","strokeWidth":2,"boundElements":[{"id":"t3","type":"text"}]},
+    {"type":"text","id":"t3","x":50,"y":275,"width":240,"height":20,"text":"3. Classify Risk (T1/T2/T3)","fontSize":15,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r3"},
+    {"type":"arrow","id":"a34","x":170,"y":306,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r4","x":50,"y":324,"width":240,"height":48,"backgroundColor":"#fff3bf","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#f59e0b","strokeWidth":2,"boundElements":[{"id":"t4","type":"text"}]},
+    {"type":"text","id":"t4","x":50,"y":340,"width":240,"height":20,"text":"4. Mode Check","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r4"},
+    {"type":"arrow","id":"a45","x":170,"y":372,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r5","x":50,"y":390,"width":240,"height":48,"backgroundColor":"#d0bfff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#8b5cf6","strokeWidth":2,"boundElements":[{"id":"t5","type":"text"}]},
+    {"type":"text","id":"t5","x":50,"y":406,"width":240,"height":20,"text":"5. Decompose + Security","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r5"},
+    {"type":"arrow","id":"a5_55","x":170,"y":438,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r55","x":50,"y":456,"width":240,"height":48,"backgroundColor":"#ffc9c9","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#ef4444","strokeWidth":2,"boundElements":[{"id":"t55","type":"text"}]},
+    {"type":"text","id":"t55","x":50,"y":473,"width":240,"height":20,"text":"5.5. Design Prototype  [NEW]","fontSize":14,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r55"},
+    {"type":"text","id":"an55","x":315,"y":456,"width":280,"height":40,"text":"3 agents dispatched in parallel:\nCLAUDE.md + ARCHITECTURE.md + DESIGN.md","fontSize":13,"fontFamily":1,"strokeColor":"#ef4444","textAlign":"left","verticalAlign":"top"},
+    {"type":"arrow","id":"ar55","x":313,"y":474,"width":18,"height":0,"points":[[0,0],[-18,0]],"endArrowhead":"arrow","strokeColor":"#ef4444","strokeWidth":1},
+    {"type":"arrow","id":"a55_58","x":170,"y":504,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r58","x":50,"y":522,"width":240,"height":48,"backgroundColor":"#ffc9c9","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#ef4444","strokeWidth":2,"boundElements":[{"id":"t58","type":"text"}]},
+    {"type":"text","id":"t58","x":50,"y":538,"width":240,"height":20,"text":"5.8. Edgar Alpha  [NEW]","fontSize":15,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r58"},
+    {"type":"text","id":"an58","x":315,"y":520,"width":280,"height":50,"text":"HARD BLOCK: challenges approach before\ncoding. Simpler path? Missed concerns?\nArchitect must revise if challenged.","fontSize":13,"fontFamily":1,"strokeColor":"#ef4444","textAlign":"left","verticalAlign":"top"},
+    {"type":"arrow","id":"ar58","x":313,"y":540,"width":18,"height":0,"points":[[0,0],[-18,0]],"endArrowhead":"arrow","strokeColor":"#ef4444","strokeWidth":1},
+    {"type":"arrow","id":"a58_6","x":170,"y":570,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r6","x":50,"y":588,"width":240,"height":48,"backgroundColor":"#a5d8ff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#4a9eed","strokeWidth":2,"boundElements":[{"id":"t6","type":"text"}]},
+    {"type":"text","id":"t6","x":50,"y":604,"width":240,"height":20,"text":"6. Review Plan","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r6"},
+    {"type":"arrow","id":"a67","x":170,"y":636,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r7","x":50,"y":654,"width":240,"height":48,"backgroundColor":"#c3fae8","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#06b6d4","strokeWidth":2,"boundElements":[{"id":"t7","type":"text"}]},
+    {"type":"text","id":"t7","x":50,"y":668,"width":240,"height":20,"text":"7. Execute Waves (TDAD) [enhanced]","fontSize":13,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r7"},
+    {"type":"text","id":"an7","x":315,"y":654,"width":280,"height":40,"text":"Wave 0 outputs test-impact-map.json.\nGreen waves use it to avoid regressions.","fontSize":13,"fontFamily":1,"strokeColor":"#06b6d4","textAlign":"left","verticalAlign":"top"},
+    {"type":"arrow","id":"ar7","x":313,"y":672,"width":18,"height":0,"points":[[0,0],[-18,0]],"endArrowhead":"arrow","strokeColor":"#06b6d4","strokeWidth":1},
+    {"type":"arrow","id":"a78","x":170,"y":702,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r8","x":50,"y":720,"width":240,"height":48,"backgroundColor":"#a5d8ff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#4a9eed","strokeWidth":2,"boundElements":[{"id":"t8","type":"text"}]},
+    {"type":"text","id":"t8","x":50,"y":736,"width":240,"height":20,"text":"8. Verify (mechanical)","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r8"},
+    {"type":"arrow","id":"a8_85","x":170,"y":768,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r85","x":50,"y":786,"width":240,"height":48,"backgroundColor":"#c3fae8","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#06b6d4","strokeWidth":2,"boundElements":[{"id":"t85","type":"text"}]},
+    {"type":"text","id":"t85","x":50,"y":802,"width":240,"height":20,"text":"8.5. Visual Verify [enhanced]","fontSize":15,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r85"},
+    {"type":"text","id":"an85","x":315,"y":784,"width":280,"height":50,"text":"Receives prototype as reference target.\nChecklist: overflow, centering, bounds,\nmobile scroll, image dimensions.","fontSize":13,"fontFamily":1,"strokeColor":"#06b6d4","textAlign":"left","verticalAlign":"top"},
+    {"type":"arrow","id":"ar85","x":313,"y":804,"width":18,"height":0,"points":[[0,0],[-18,0]],"endArrowhead":"arrow","strokeColor":"#06b6d4","strokeWidth":1},
+    {"type":"arrow","id":"a85_87","x":170,"y":834,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r87","x":50,"y":852,"width":240,"height":48,"backgroundColor":"#ffc9c9","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#ef4444","strokeWidth":2,"boundElements":[{"id":"t87","type":"text"}]},
+    {"type":"text","id":"t87","x":50,"y":869,"width":240,"height":20,"text":"8.7. Lighthouse Gate  [NEW]","fontSize":15,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r87"},
+    {"type":"text","id":"an87","x":315,"y":852,"width":280,"height":40,"text":"perf / a11y / seo / bp all >= 90.\nUp to 3 fix iterations before warning.","fontSize":13,"fontFamily":1,"strokeColor":"#ef4444","textAlign":"left","verticalAlign":"top"},
+    {"type":"arrow","id":"ar87","x":313,"y":870,"width":18,"height":0,"points":[[0,0],[-18,0]],"endArrowhead":"arrow","strokeColor":"#ef4444","strokeWidth":1},
+    {"type":"arrow","id":"a87_9","x":170,"y":900,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r9","x":50,"y":918,"width":240,"height":48,"backgroundColor":"#d0bfff","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#8b5cf6","strokeWidth":2,"boundElements":[{"id":"t9","type":"text"}]},
+    {"type":"text","id":"t9","x":50,"y":935,"width":240,"height":20,"text":"9. Evaluate (Edgar Beta x3)","fontSize":15,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r9"},
+    {"type":"arrow","id":"a9_10","x":170,"y":966,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r10","x":50,"y":984,"width":240,"height":48,"backgroundColor":"#fff3bf","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#f59e0b","strokeWidth":2,"boundElements":[{"id":"t10","type":"text"}]},
+    {"type":"text","id":"t10","x":50,"y":1001,"width":240,"height":20,"text":"10. Verdict (composite >= 0.7)","fontSize":15,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r10"},
+    {"type":"arrow","id":"a10_105","x":170,"y":1032,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r105","x":50,"y":1050,"width":240,"height":48,"backgroundColor":"#ffc9c9","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#ef4444","strokeWidth":2,"boundElements":[{"id":"t105","type":"text"}]},
+    {"type":"text","id":"t105","x":50,"y":1066,"width":240,"height":20,"text":"10.5. Self-Verify  [NEW]","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r105"},
+    {"type":"text","id":"an105","x":315,"y":1050,"width":280,"height":40,"text":"Did I accomplish each acceptance criterion?\nverified / partial / not_met per item.","fontSize":13,"fontFamily":1,"strokeColor":"#ef4444","textAlign":"left","verticalAlign":"top"},
+    {"type":"arrow","id":"ar105","x":313,"y":1068,"width":18,"height":0,"points":[[0,0],[-18,0]],"endArrowhead":"arrow","strokeColor":"#ef4444","strokeWidth":1},
+    {"type":"arrow","id":"a105_11","x":170,"y":1098,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r11","x":50,"y":1116,"width":240,"height":48,"backgroundColor":"#b2f2bb","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#22c55e","strokeWidth":2,"boundElements":[{"id":"t11","type":"text"}]},
+    {"type":"text","id":"t11","x":50,"y":1132,"width":240,"height":20,"text":"11. Deliver","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r11"},
+    {"type":"arrow","id":"a11_12","x":170,"y":1164,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r12","x":50,"y":1182,"width":240,"height":48,"backgroundColor":"#b2f2bb","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#22c55e","strokeWidth":2,"boundElements":[{"id":"t12","type":"text"}]},
+    {"type":"text","id":"t12","x":50,"y":1198,"width":240,"height":20,"text":"12. Deliver to Main","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r12"},
+    {"type":"arrow","id":"a12_13","x":170,"y":1230,"width":0,"height":18,"points":[[0,0],[0,18]],"endArrowhead":"arrow","strokeColor":"#555","strokeWidth":2},
+
+    {"type":"rectangle","id":"r13","x":50,"y":1248,"width":240,"height":48,"backgroundColor":"#b2f2bb","fillStyle":"solid","roundness":{"type":3},"strokeColor":"#22c55e","strokeWidth":2,"boundElements":[{"id":"t13","type":"text"}]},
+    {"type":"text","id":"t13","x":50,"y":1264,"width":240,"height":20,"text":"13. Report + Close","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"center","verticalAlign":"middle","containerId":"r13"},
+
+    {"type":"text","id":"leg0","x":30,"y":1325,"width":200,"height":22,"text":"Legend:","fontSize":16,"fontFamily":1,"strokeColor":"#1e1e1e","textAlign":"left","verticalAlign":"top"},
+    {"type":"rectangle","id":"lg1","x":30,"y":1352,"width":20,"height":14,"backgroundColor":"#a5d8ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":1},
+    {"type":"text","id":"lt1","x":56,"y":1349,"width":220,"height":18,"text":"Existing step (unchanged)","fontSize":13,"fontFamily":1,"strokeColor":"#555","textAlign":"left","verticalAlign":"top"},
+    {"type":"rectangle","id":"lg2","x":30,"y":1372,"width":20,"height":14,"backgroundColor":"#d0bfff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":1},
+    {"type":"text","id":"lt2","x":56,"y":1369,"width":220,"height":18,"text":"Parallel / complex step","fontSize":13,"fontFamily":1,"strokeColor":"#555","textAlign":"left","verticalAlign":"top"},
+    {"type":"rectangle","id":"lg3","x":30,"y":1392,"width":20,"height":14,"backgroundColor":"#c3fae8","fillStyle":"solid","strokeColor":"#06b6d4","strokeWidth":1},
+    {"type":"text","id":"lt3","x":56,"y":1389,"width":220,"height":18,"text":"Enhanced in v2","fontSize":13,"fontFamily":1,"strokeColor":"#555","textAlign":"left","verticalAlign":"top"},
+    {"type":"rectangle","id":"lg4","x":30,"y":1412,"width":20,"height":14,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":1},
+    {"type":"text","id":"lt4","x":56,"y":1409,"width":220,"height":18,"text":"NEW step in v2","fontSize":13,"fontFamily":1,"strokeColor":"#555","textAlign":"left","verticalAlign":"top"},
+    {"type":"rectangle","id":"lg5","x":30,"y":1432,"width":20,"height":14,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":1},
+    {"type":"text","id":"lt5","x":56,"y":1429,"width":220,"height":18,"text":"Decision point","fontSize":13,"fontFamily":1,"strokeColor":"#555","textAlign":"left","verticalAlign":"top"},
+    {"type":"rectangle","id":"lg6","x":30,"y":1452,"width":20,"height":14,"backgroundColor":"#b2f2bb","fillStyle":"solid","strokeColor":"#22c55e","strokeWidth":1},
+    {"type":"text","id":"lt6","x":56,"y":1449,"width":220,"height":18,"text":"Delivery step","fontSize":13,"fontFamily":1,"strokeColor":"#555","textAlign":"left","verticalAlign":"top"}
+  ],
+  "appState": {"gridSize": null,"viewBackgroundColor":"#ffffff"},
+  "files": {}
+}
