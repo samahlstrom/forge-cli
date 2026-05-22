@@ -1,42 +1,4 @@
 {
-	"hooks": {
-		"PostToolUse": [
-			{
-				"hooks": [
-					{
-						"command": "bash .forge/hooks/post-edit.sh",
-						"timeout": 5000,
-						"type": "command"
-					}
-				],
-				"matcher": "Edit|Write"
-			}
-		],
-		"PreToolUse": [
-			{
-				"hooks": [
-					{
-						"command": "bash .forge/hooks/pre-edit.sh",
-						"timeout": 5000,
-						"type": "command"
-					}
-				],
-				"matcher": "Edit|Write"
-			}
-		],
-		"SessionStart": [
-			{
-				"hooks": [
-					{
-						"command": "bash .forge/hooks/session-start.sh",
-						"timeout": 10000,
-						"type": "command"
-					}
-				],
-				"matcher": ""
-			}
-		]
-	},
 	"permissions": {
 		"allow": [
 			"Read",
