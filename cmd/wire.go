@@ -125,7 +125,11 @@ func wireAllSkills() {
 
 // pruneStaleSkills removes symlinks in .claude/skills/ that point to nonexistent targets.
 func pruneStaleSkills() {
-	skillsDir := filepath.Join(".claude", "skills")
+	pruneStaleSkillsIn(filepath.Join(".claude", "skills"))
+}
+
+// pruneStaleSkillsIn removes broken symlinks from any skills directory.
+func pruneStaleSkillsIn(skillsDir string) {
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
 		return
@@ -137,19 +141,100 @@ func pruneStaleSkills() {
 		}
 		targetFile := filepath.Join(skillsDir, entry.Name(), "SKILL.md")
 
-		// Only touch symlinks
 		info, err := os.Lstat(targetFile)
 		if err != nil || info.Mode()&os.ModeSymlink == 0 {
 			continue
 		}
 
-		// Check if the symlink target exists
 		if _, err := os.Stat(targetFile); err != nil {
-			// Broken symlink — remove it and its directory
 			os.Remove(targetFile)
 			os.Remove(filepath.Join(skillsDir, entry.Name()))
 			ui.Log.Step(fmt.Sprintf("Removed stale link: %s", entry.Name()))
 		}
+	}
+}
+
+// wireSkillsInto installs skills as symlinks under skillsDir. Returns counts.
+// Behavior per skill:
+//   - already correctly linked → no-op
+//   - SKILL.md is a symlink (even broken) or the dir itself is a symlink → ours, replace
+//   - regular file/dir → skip unless force=true, then replace
+func wireSkillsInto(skillsDir string, skills []resolve.SkillInfo, force, verbose bool) (int, int) {
+	installed, skipped := 0, 0
+	for _, skill := range skills {
+		targetDir := filepath.Join(skillsDir, skill.Name)
+		targetFile := filepath.Join(targetDir, "SKILL.md")
+
+		if dest, err := os.Readlink(targetFile); err == nil && dest == skill.Path {
+			if verbose {
+				ui.Log.Step(fmt.Sprintf("%s (already linked)", skill.Name))
+			}
+			installed++
+			continue
+		}
+
+		linkInfo, linkErr := os.Lstat(targetFile)
+		dirInfo, dirErr := os.Lstat(targetDir)
+
+		isOurs := false
+		if linkErr == nil && linkInfo.Mode()&os.ModeSymlink != 0 {
+			isOurs = true
+		} else if linkErr != nil && dirErr == nil && dirInfo.Mode()&os.ModeSymlink != 0 {
+			isOurs = true
+		}
+
+		if !isOurs && linkErr == nil && !force {
+			if verbose {
+				ui.Log.Step(fmt.Sprintf("%s (project-specific, skipped — use --force to overwrite)", skill.Name))
+			}
+			skipped++
+			continue
+		}
+
+		if linkErr == nil {
+			os.Remove(targetFile)
+		}
+		// If targetDir itself is a symlink (e.g. broken link from old install), remove it.
+		if dirErr == nil && dirInfo.Mode()&os.ModeSymlink != 0 {
+			os.Remove(targetDir)
+		} else if force && dirErr == nil && dirInfo.IsDir() && !isOurs {
+			os.RemoveAll(targetDir)
+		}
+
+		if err := os.MkdirAll(targetDir, 0o755); err != nil {
+			ui.Log.Error(fmt.Sprintf("failed to create %s: %v", targetDir, err))
+			continue
+		}
+		if err := os.Symlink(skill.Path, targetFile); err != nil {
+			ui.Log.Error(fmt.Sprintf("failed to symlink %s: %v", skill.Name, err))
+			continue
+		}
+		if verbose {
+			ui.Log.Success(fmt.Sprintf("%s → %s", skill.Name, ui.Dim(skill.Path)))
+		}
+		installed++
+	}
+	return installed, skipped
+}
+
+// wireAllSkillsGlobal re-syncs ~/.claude/skills/ from the toolkit. Only acts
+// if ~/.claude/skills/ exists (i.e. user previously ran `forge init --global`).
+// Never overwrites non-symlink skills (no --force here).
+func wireAllSkillsGlobal() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	skillsDir := filepath.Join(home, ".claude", "skills")
+	info, err := os.Stat(skillsDir)
+	if err != nil || !info.IsDir() {
+		return
+	}
+	skills := resolve.ListSkills()
+	installed, _ := wireSkillsInto(skillsDir, skills, false, false)
+	pruneStaleSkillsIn(skillsDir)
+	if installed > 0 {
+		ui.Log.Success(fmt.Sprintf("Re-synced %d skill(s) into ~/.claude/skills/", installed))
 	}
 }
 

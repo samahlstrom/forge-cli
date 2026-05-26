@@ -16,6 +16,7 @@ const forgeMarkerBegin = "<!-- BEGIN FORGE INTEGRATION -->"
 const forgeMarkerEnd = "<!-- END FORGE INTEGRATION -->"
 
 var globalFlag bool
+var forceFlag bool
 
 func init() {
 	initCmd := &cobra.Command{
@@ -28,11 +29,16 @@ Use --global to install skills into ~/.claude/skills/ instead, making
 them available in every Claude Code session (CLI, Desktop, VS Code,
 JetBrains).
 
+Use --force to overwrite existing non-symlink skill directories
+(useful when ~/.claude/skills/ contains stale copies from earlier
+installs).
+
 Skills are symlinked, not copied — running 'forge sync' updates them
 everywhere automatically.`,
 		RunE: runInit,
 	}
 	initCmd.Flags().BoolVarP(&globalFlag, "global", "g", false, "Install skills globally into ~/.claude/ (available in all projects and interfaces)")
+	initCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Overwrite existing non-symlink skill directories")
 	rootCmd.AddCommand(initCmd)
 }
 
@@ -64,40 +70,8 @@ func runInitGlobal(skills []resolve.SkillInfo) error {
 
 	ui.Intro("Installing forge globally into ~/.claude/")
 
-	installed := 0
-	for _, skill := range skills {
-		targetDir := filepath.Join(skillsDir, skill.Name)
-		targetFile := filepath.Join(targetDir, "SKILL.md")
-
-		// Check if already correctly symlinked
-		if dest, err := os.Readlink(targetFile); err == nil && dest == skill.Path {
-			ui.Log.Step(fmt.Sprintf("%s (already linked)", skill.Name))
-			installed++
-			continue
-		}
-
-		// Don't overwrite non-symlink skills
-		if info, err := os.Lstat(targetFile); err == nil && info.Mode()&os.ModeSymlink == 0 {
-			ui.Log.Step(fmt.Sprintf("%s (existing file, skipped)", skill.Name))
-			installed++
-			continue
-		}
-
-		if err := os.MkdirAll(targetDir, 0o755); err != nil {
-			ui.Log.Error(fmt.Sprintf("failed to create %s: %v", targetDir, err))
-			continue
-		}
-
-		os.Remove(targetFile)
-
-		if err := os.Symlink(skill.Path, targetFile); err != nil {
-			ui.Log.Error(fmt.Sprintf("failed to symlink %s: %v", skill.Name, err))
-			continue
-		}
-
-		ui.Log.Success(fmt.Sprintf("%s → %s", skill.Name, ui.Dim(skill.Path)))
-		installed++
-	}
+	installed, _ := wireSkillsInto(skillsDir, skills, forceFlag, true)
+	pruneStaleSkillsIn(skillsDir)
 
 	fmt.Println()
 	if installed > 0 {

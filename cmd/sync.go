@@ -55,5 +55,8 @@ func runSync(_ *cobra.Command, _ []string) error {
 	// Re-wire skills into current project if initialized
 	wireAllSkills()
 
+	// Re-wire global skills into ~/.claude/skills/ if global install present
+	wireAllSkillsGlobal()
+
 	return nil
 }
