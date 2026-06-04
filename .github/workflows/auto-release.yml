@@ -40,6 +40,8 @@ jobs:
           ver=${latest#v}; major=${ver%%.*}; rest=${ver#*.}; minor=${rest%%.*}; patch=${rest##*.}
           next="v${major}.${minor}.$((patch + 1))"
           echo "Tagging $next at $(git rev-parse --short HEAD)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "$next" -m "Release $next"
           git push origin "$next"
 
