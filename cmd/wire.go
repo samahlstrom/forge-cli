@@ -236,6 +236,9 @@ func wireAllSkillsGlobal() {
 	if installed > 0 {
 		ui.Log.Success(fmt.Sprintf("Re-synced %d skill(s) into ~/.claude/skills/", installed))
 	}
+
+	// Keep Codex's skill directory in sync too (~/.codex/skills/).
+	wireCodexSkillsGlobal(skills)
 }
 
 // updateSkillsGitignore scans .claude/skills/ for symlinked entries and writes
