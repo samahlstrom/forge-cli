@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,10 @@ import (
 
 	"github.com/spf13/cobra"
 )
+
+// forgeManagedMarker marks a Codex skill directory as one we copied (vs. a
+// user-authored skill of the same name), so refresh/prune only touches ours.
+const forgeManagedMarker = ".forge-managed"
 
 const forgeMarkerBegin = "<!-- BEGIN FORGE INTEGRATION -->"
 const forgeMarkerEnd = "<!-- END FORGE INTEGRATION -->"
@@ -282,10 +287,11 @@ func injectCodexGlobal() {
 	}
 }
 
-// wireCodexSkillsGlobal symlinks toolkit skills into ~/.codex/skills/ so Codex
-// auto-discovers them, exactly as we do for ~/.claude/skills/. Codex uses the
-// same <name>/SKILL.md layout as Claude. No-op if Codex isn't installed. The
-// AGENTS.md manifest (injectCodexGlobal) is just an index — this is what makes
+// wireCodexSkillsGlobal copies toolkit skills into ~/.codex/skills/ so Codex
+// auto-discovers them. Codex uses the same <name>/SKILL.md layout as Claude but,
+// unlike Claude, its loader does NOT follow symlinks — so these must be real file
+// copies (matching Codex's own skill-installer). No-op if Codex isn't installed.
+// The AGENTS.md manifest (injectCodexGlobal) is just an index; this is what makes
 // the skills actually loadable.
 func wireCodexSkillsGlobal(skills []resolve.SkillInfo) {
 	ch := codexHome()
@@ -299,9 +305,70 @@ func wireCodexSkillsGlobal(skills []resolve.SkillInfo) {
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
 		return
 	}
-	installed, _ := wireSkillsInto(skillsDir, skills, false, false)
-	pruneStaleSkillsIn(skillsDir)
-	if installed > 0 {
-		ui.Log.Success(fmt.Sprintf("Wired %d skill(s) into ~/.codex/skills/", installed))
+
+	wanted := map[string]bool{}
+	copied := 0
+	for _, s := range skills {
+		wanted[s.Name] = true
+		dst := filepath.Join(skillsDir, s.Name)
+		// Don't clobber a user-authored skill of the same name (no marker).
+		if _, err := os.Stat(dst); err == nil {
+			if _, mErr := os.Stat(filepath.Join(dst, forgeManagedMarker)); mErr != nil {
+				continue
+			}
+		}
+		if err := copySkillDir(filepath.Dir(s.Path), dst); err != nil {
+			continue
+		}
+		_ = os.WriteFile(filepath.Join(dst, forgeManagedMarker), []byte("forge\n"), 0o644)
+		copied++
+	}
+	pruneStaleCodexSkills(skillsDir, wanted)
+	if copied > 0 {
+		ui.Log.Success(fmt.Sprintf("Copied %d skill(s) into ~/.codex/skills/", copied))
+	}
+}
+
+// copySkillDir recursively copies a skill source directory to dst as real files,
+// replacing any previous copy.
+func copySkillDir(src, dst string) error {
+	if err := os.RemoveAll(dst); err != nil {
+		return err
+	}
+	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(p) // resolves symlinked source files to real content
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
+}
+
+// pruneStaleCodexSkills removes forge-managed skill copies that are no longer in
+// the toolkit. Never touches user-authored skills (no marker) or .system.
+func pruneStaleCodexSkills(skillsDir string, wanted map[string]bool) {
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == ".system" || wanted[e.Name()] {
+			continue
+		}
+		marker := filepath.Join(skillsDir, e.Name(), forgeManagedMarker)
+		if _, err := os.Stat(marker); err == nil {
+			os.RemoveAll(filepath.Join(skillsDir, e.Name()))
+		}
 	}
 }
