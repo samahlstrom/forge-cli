@@ -78,11 +78,14 @@ func runInitGlobal(skills []resolve.SkillInfo) error {
 		ui.Log.Info(fmt.Sprintf("%d skill(s) installed globally — available in all Claude Code sessions.", installed))
 	}
 
-	// Inject forge section into ~/.claude/CLAUDE.md
+	// Inject forge section into ~/.claude/CLAUDE.md (Claude resolves @agents.md)
 	claudeMD := filepath.Join(claudeDir, "CLAUDE.md")
 	if err := ensureClaudeMDSectionAt(claudeMD, skills); err != nil {
 		ui.Log.Warn(fmt.Sprintf("Could not update ~/.claude/CLAUDE.md: %v", err))
 	}
+
+	// Inject the literal manifest into Codex's global AGENTS.md (no @import support)
+	injectCodexGlobal()
 
 	return nil
 }
@@ -137,9 +140,15 @@ func runInitLocal(skills []resolve.SkillInfo) error {
 	// Symlink global agents.md into project root
 	ensureAgentsMDLink()
 
-	// Inject forge section into CLAUDE.md
+	// Inject forge section into CLAUDE.md (Claude resolves @agents.md)
 	if err := ensureClaudeMDSectionAt("CLAUDE.md", skills); err != nil {
 		ui.Log.Warn(fmt.Sprintf("Could not update CLAUDE.md: %v", err))
+	}
+
+	// Embed the literal manifest into the project AGENTS.md for Codex. Skipped
+	// automatically if AGENTS.md is the toolkit symlink (see ensureCodexAgentsMDAt).
+	if err := ensureCodexAgentsMDAt("AGENTS.md"); err != nil {
+		ui.Log.Warn(fmt.Sprintf("Could not update AGENTS.md: %v", err))
 	}
 
 	return nil
@@ -169,46 +178,104 @@ func ensureAgentsMDLink() {
 	ui.Log.Success(fmt.Sprintf("agents.md → %s", ui.Dim(globalAgentsMD)))
 }
 
-// ensureClaudeMDSectionAt adds or updates a forge section in the given CLAUDE.md file.
-// The section is kept minimal — just an @agents.md import that auto-loads the skill manifest.
-func ensureClaudeMDSectionAt(claudeMD string, _ []resolve.SkillInfo) error {
-	// Minimal forge section: just the @agents.md import
-	forgeSection := forgeMarkerBegin + "\n@agents.md\n" + forgeMarkerEnd
+// writeForgeSection adds or updates the forge marker block (with `body` as its
+// contents) in the file at path. Replaces an existing block in place; otherwise
+// prepends a new one so it loads first. `label` is used only for log output.
+func writeForgeSection(path, body, label string) error {
+	forgeSection := forgeMarkerBegin + "\n" + body + "\n" + forgeMarkerEnd
 
-	// Read existing CLAUDE.md or create one
 	existing := ""
-	if data, err := os.ReadFile(claudeMD); err == nil {
+	if data, err := os.ReadFile(path); err == nil {
 		existing = string(data)
 	}
 
-	// Replace existing section
+	// Replace an existing forge block in place.
 	if strings.Contains(existing, forgeMarkerBegin) {
 		beginIdx := strings.Index(existing, forgeMarkerBegin)
 		endIdx := strings.Index(existing, forgeMarkerEnd)
 		if endIdx > beginIdx {
 			updated := existing[:beginIdx] + forgeSection + existing[endIdx+len(forgeMarkerEnd):]
-			if err := os.WriteFile(claudeMD, []byte(updated), 0o644); err != nil {
+			if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
 				return err
 			}
-			ui.Log.Success("Updated CLAUDE.md (@agents.md import)")
+			ui.Log.Success(fmt.Sprintf("Updated %s (forge section)", label))
 			return nil
 		}
 	}
 
-	// Prepend — @agents.md must load first so all agents get the toolkit manifest
+	// Prepend — the forge block must load first so all agents get the manifest.
 	content := forgeSection + "\n"
 	if existing != "" {
 		content += "\n" + existing
 	}
-
-	if err := os.WriteFile(claudeMD, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return err
 	}
-
 	if existing == "" {
-		ui.Log.Success("Created CLAUDE.md with @agents.md import")
+		ui.Log.Success(fmt.Sprintf("Created %s with forge section", label))
 	} else {
-		ui.Log.Success("Prepended @agents.md import to CLAUDE.md")
+		ui.Log.Success(fmt.Sprintf("Prepended forge section to %s", label))
 	}
 	return nil
+}
+
+// ensureClaudeMDSectionAt adds or updates a forge section in the given CLAUDE.md
+// file. Claude resolves `@agents.md`, so the section is just that import.
+func ensureClaudeMDSectionAt(claudeMD string, _ []resolve.SkillInfo) error {
+	return writeForgeSection(claudeMD, "@agents.md", "CLAUDE.md")
+}
+
+// codexHome returns Codex's config dir ($CODEX_HOME, else ~/.codex). Empty if
+// the home directory can't be resolved.
+func codexHome() string {
+	if h := os.Getenv("CODEX_HOME"); h != "" {
+		return h
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".codex")
+}
+
+// forgeManifestBody returns the toolkit's agents.md content, embedded literally
+// for agents (like Codex) that do NOT resolve `@agents.md` imports.
+func forgeManifestBody() (string, bool) {
+	data, err := os.ReadFile(filepath.Join(resolve.ForgeHome(), "agents.md"))
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimRight(string(data), "\n"), true
+}
+
+// ensureCodexAgentsMDAt embeds the toolkit manifest (literal content, not an
+// @import) into an AGENTS.md so Codex picks up the toolkit. Skips symlinked
+// targets: on a case-insensitive filesystem `AGENTS.md` may resolve to the
+// `agents.md` symlink that already points at the toolkit, and writing would
+// follow the link and clobber the toolkit's own agents.md.
+func ensureCodexAgentsMDAt(agentsMD string) error {
+	if info, err := os.Lstat(agentsMD); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		ui.Log.Step(fmt.Sprintf("%s (symlinked to toolkit, skipped)", agentsMD))
+		return nil
+	}
+	body, ok := forgeManifestBody()
+	if !ok {
+		return nil // no toolkit manifest yet — forge sync will create it
+	}
+	return writeForgeSection(agentsMD, body, "AGENTS.md")
+}
+
+// injectCodexGlobal writes the toolkit manifest into Codex's global AGENTS.md,
+// but only if Codex's config dir already exists (don't presume Codex is used).
+func injectCodexGlobal() {
+	ch := codexHome()
+	if ch == "" {
+		return
+	}
+	if info, err := os.Stat(ch); err != nil || !info.IsDir() {
+		return
+	}
+	if err := ensureCodexAgentsMDAt(filepath.Join(ch, "AGENTS.md")); err != nil {
+		ui.Log.Warn(fmt.Sprintf("Could not update %s: %v", filepath.Join(ch, "AGENTS.md"), err))
+	}
 }
