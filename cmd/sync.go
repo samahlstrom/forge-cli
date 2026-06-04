@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"github.com/samahlstrom/forge-cli/internal/resolve"
 	"github.com/samahlstrom/forge-cli/internal/ui"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -57,6 +57,13 @@ func runSync(_ *cobra.Command, _ []string) error {
 
 	// Re-wire global skills into ~/.claude/skills/ if global install present
 	wireAllSkillsGlobal()
+
+	// Refresh Codex AGENTS.md manifests. Codex doesn't resolve @agents.md, so its
+	// copy is literal content and must be re-synced (Claude's @import is live).
+	injectCodexGlobal()
+	if isProjectInitialized() {
+		_ = ensureCodexAgentsMDAt("AGENTS.md")
+	}
 
 	return nil
 }
