@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/samahlstrom/forge-cli/internal/resolve"
 )
 
 func TestWriteForgeSection(t *testing.T) {
@@ -94,6 +96,41 @@ func TestEnsureCodexAgentsMDSkipsSymlink(t *testing.T) {
 	}
 	if got := readFile(t, target); got != "ORIGINAL\n" {
 		t.Fatalf("symlink target was written through; want unchanged, got:\n%s", got)
+	}
+}
+
+func TestWireCodexSkillsGlobal(t *testing.T) {
+	// A toolkit skill on disk.
+	toolkit := t.TempDir()
+	skillDir := filepath.Join(toolkit, "validate")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillFile := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(skillFile, []byte("---\nname: validate\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	skills := []resolve.SkillInfo{{Name: "validate", Path: skillFile}}
+
+	// Codex installed → skill is wired (symlinked) so Codex can discover it.
+	codex := t.TempDir()
+	t.Setenv("CODEX_HOME", codex)
+	wireCodexSkillsGlobal(skills)
+	link := filepath.Join(codex, "skills", "validate", "SKILL.md")
+	dest, err := os.Readlink(link)
+	if err != nil {
+		t.Fatalf("expected ~/.codex/skills/validate/SKILL.md symlink: %v", err)
+	}
+	if dest != skillFile {
+		t.Fatalf("symlink points to %q, want %q", dest, skillFile)
+	}
+
+	// Codex not installed (config dir absent) → no-op, no skills dir created.
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	t.Setenv("CODEX_HOME", missing)
+	wireCodexSkillsGlobal(skills)
+	if _, err := os.Stat(filepath.Join(missing, "skills")); !os.IsNotExist(err) {
+		t.Fatalf("should not create skills dir when Codex isn't installed")
 	}
 }
 

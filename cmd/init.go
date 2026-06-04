@@ -84,7 +84,9 @@ func runInitGlobal(skills []resolve.SkillInfo) error {
 		ui.Log.Warn(fmt.Sprintf("Could not update ~/.claude/CLAUDE.md: %v", err))
 	}
 
-	// Inject the literal manifest into Codex's global AGENTS.md (no @import support)
+	// Wire skills into ~/.codex/skills/ so Codex auto-discovers them, and inject
+	// the literal manifest into Codex's global AGENTS.md as an index.
+	wireCodexSkillsGlobal(skills)
 	injectCodexGlobal()
 
 	return nil
@@ -277,5 +279,29 @@ func injectCodexGlobal() {
 	}
 	if err := ensureCodexAgentsMDAt(filepath.Join(ch, "AGENTS.md")); err != nil {
 		ui.Log.Warn(fmt.Sprintf("Could not update %s: %v", filepath.Join(ch, "AGENTS.md"), err))
+	}
+}
+
+// wireCodexSkillsGlobal symlinks toolkit skills into ~/.codex/skills/ so Codex
+// auto-discovers them, exactly as we do for ~/.claude/skills/. Codex uses the
+// same <name>/SKILL.md layout as Claude. No-op if Codex isn't installed. The
+// AGENTS.md manifest (injectCodexGlobal) is just an index — this is what makes
+// the skills actually loadable.
+func wireCodexSkillsGlobal(skills []resolve.SkillInfo) {
+	ch := codexHome()
+	if ch == "" {
+		return
+	}
+	if info, err := os.Stat(ch); err != nil || !info.IsDir() {
+		return // Codex not installed
+	}
+	skillsDir := filepath.Join(ch, "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		return
+	}
+	installed, _ := wireSkillsInto(skillsDir, skills, false, false)
+	pruneStaleSkillsIn(skillsDir)
+	if installed > 0 {
+		ui.Log.Success(fmt.Sprintf("Wired %d skill(s) into ~/.codex/skills/", installed))
 	}
 }
