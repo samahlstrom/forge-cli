@@ -112,17 +112,37 @@ func TestWireCodexSkillsGlobal(t *testing.T) {
 	}
 	skills := []resolve.SkillInfo{{Name: "validate", Path: skillFile}}
 
-	// Codex installed → skill is wired (symlinked) so Codex can discover it.
+	// Codex installed → skill is copied as REAL files (Codex doesn't follow
+	// symlinks), with a forge-managed marker.
 	codex := t.TempDir()
 	t.Setenv("CODEX_HOME", codex)
 	wireCodexSkillsGlobal(skills)
-	link := filepath.Join(codex, "skills", "validate", "SKILL.md")
-	dest, err := os.Readlink(link)
+	copied := filepath.Join(codex, "skills", "validate", "SKILL.md")
+	info, err := os.Lstat(copied)
 	if err != nil {
-		t.Fatalf("expected ~/.codex/skills/validate/SKILL.md symlink: %v", err)
+		t.Fatalf("expected ~/.codex/skills/validate/SKILL.md: %v", err)
 	}
-	if dest != skillFile {
-		t.Fatalf("symlink points to %q, want %q", dest, skillFile)
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("Codex skill must be a real file, not a symlink")
+	}
+	if got := readFile(t, copied); !strings.Contains(got, "name: validate") {
+		t.Fatalf("copied SKILL.md missing content:\n%s", got)
+	}
+	if _, err := os.Stat(filepath.Join(codex, "skills", "validate", forgeManagedMarker)); err != nil {
+		t.Fatalf("expected forge-managed marker: %v", err)
+	}
+
+	// A user-authored skill of the same name (no marker) must not be clobbered.
+	userSkill := filepath.Join(codex, "skills", "mine")
+	if err := os.MkdirAll(userSkill, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(userSkill, "SKILL.md"), []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wireCodexSkillsGlobal([]resolve.SkillInfo{{Name: "mine", Path: skillFile}})
+	if got := readFile(t, filepath.Join(userSkill, "SKILL.md")); got != "keep me" {
+		t.Fatalf("clobbered a user-authored skill: %q", got)
 	}
 
 	// Codex not installed (config dir absent) → no-op, no skills dir created.
