@@ -25,6 +25,24 @@ jobs:
           go vet ./...
           go test ./...
 
+      # GoReleaser requires HEAD to be on a tag. Pushes to main from squash-merges
+      # arrive untagged, so create+push the next patch tag here (idempotent: if HEAD
+      # is already tagged — e.g. a direct push with --follow-tags — reuse that tag).
+      - name: Ensure release tag on HEAD
+        run: |
+          git fetch --tags --force --quiet
+          if git describe --exact-match --tags HEAD >/dev/null 2>&1; then
+            echo "HEAD already tagged: $(git describe --exact-match --tags HEAD)"
+            exit 0
+          fi
+          latest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+          latest=${latest:-v0.0.0}
+          ver=${latest#v}; major=${ver%%.*}; rest=${ver#*.}; minor=${rest%%.*}; patch=${rest##*.}
+          next="v${major}.${minor}.$((patch + 1))"
+          echo "Tagging $next at $(git rev-parse --short HEAD)"
+          git tag -a "$next" -m "Release $next"
+          git push origin "$next"
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
