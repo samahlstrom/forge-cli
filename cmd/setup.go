@@ -272,6 +272,16 @@ func extractEmbedded(content embed.FS, root, dst string) error {
 			return err
 		}
 
-		return os.WriteFile(target, data, 0o644)
+		return os.WriteFile(target, data, extractedFileMode(rel))
 	})
+}
+
+// extractedFileMode picks the file mode for an extracted toolkit file. Shell
+// scripts (e.g. library/hooks/*.sh) must be executable so the git hook wrapper
+// and gates can run straight after `forge setup`; everything else is 0644.
+func extractedFileMode(rel string) os.FileMode {
+	if strings.HasSuffix(rel, ".sh") {
+		return 0o755
+	}
+	return 0o644
 }

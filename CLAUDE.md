@@ -115,4 +115,35 @@ forge get <repo> <name> # Pull a skill from any repo
 - `/ingest`
 - `/skill-creator`
 
+### Hooks
+
+`forge init` (and `forge sync`) also install **hooks** from `~/.forge/hooks/manifest.json`,
+so the workflow's guardrails travel with the toolkit — not just skills. The installer
+walks the manifest generically (it switches on `kind`, never a hook's name); add a hook
+by editing the manifest, not Go code. Each manifest entry sets `default` (auto-install)
+and `scope` (`repo`); install an opt-in hook with `forge init --enable-hook <name>`.
+
+- **Primary — git `pre-push` gate (`pre-push-validate.sh`, default).** Blocks
+  `git push` of a branch whose receipt is missing/mismatched. `forge init` writes a
+  committed `.githooks/pre-push` wrapper and sets `core.hooksPath` to `.githooks`
+  (relative → resolves per worktree, travels with the code); the wrapper resolves the
+  personal gate at runtime (`$FORGE_HOME`/`$HOME/.forge`), so **no hardcoded paths**.
+  It inspects the actual push refs on stdin, so it never false-blocks a message or
+  script that merely contains "git push". A pre-existing hook is preserved as
+  `pre-push.local` and chained; an already-set `core.hooksPath` is respected;
+  re-runs are idempotent (`# forge-managed:` sentinel).
+- **Receipt handshake.** `/validate` writes `<repo>/.claude/.validate-receipt` at its
+  Definition of Done; line 1 is pipe-delimited and field 1 is the branch. Both gates
+  read it — the push is allowed only when the receipt names the branch being pushed.
+- **Opt-in — `PreToolUse(Bash)` validate-gate (`validate-gate.sh`, default:false).**
+  Hard-blocks `gh pr create` until the receipt exists. Its command string-match is
+  leaky (can false-block any Bash containing `gh pr create`), so it is **never**
+  installed globally or into a commander session — only into a per-repo committed
+  `.claude/settings.json` when explicitly opted in.
+- **settings.json deep-merge guarantees.** Claude-settings hooks are deep-merged into
+  the committed `.claude/settings.json` (not `settings.local.json`): every other key
+  is preserved (`permissions`, unrelated matchers), the command is appended only if
+  absent (idempotent), and the file is pretty-printed back. The forge binary does the
+  write, bypassing Claude's auto-mode classifier that blocks agent edits to settings.
+
 <!-- END FORGE INTEGRATION -->
