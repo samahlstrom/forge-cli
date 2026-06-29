@@ -102,9 +102,11 @@ func runInitGlobal(skills []resolve.SkillInfo) error {
 		ui.Log.Info(fmt.Sprintf("%d skill(s) installed globally — available in all Claude Code sessions.", installed))
 	}
 
-	// Inject forge section into ~/.claude/CLAUDE.md (Claude resolves @agents.md)
+	// Inject forge section into ~/.claude/CLAUDE.md. The import MUST be absolute:
+	// a relative @AGENTS.md here resolves to ~/.claude/AGENTS.md (the user's own
+	// profile), not the toolkit — so the toolkit would never load globally.
 	claudeMD := filepath.Join(claudeDir, "CLAUDE.md")
-	if err := ensureClaudeMDSectionAt(claudeMD, skills); err != nil {
+	if err := ensureClaudeMDSectionAt(claudeMD, globalForgeImport()); err != nil {
 		ui.Log.Warn(fmt.Sprintf("Could not update ~/.claude/CLAUDE.md: %v", err))
 	}
 
@@ -166,8 +168,10 @@ func runInitLocal(skills []resolve.SkillInfo) error {
 	// Symlink global agents.md into project root
 	ensureAgentsMDLink()
 
-	// Inject forge section into CLAUDE.md (Claude resolves @agents.md)
-	if err := ensureClaudeMDSectionAt("CLAUDE.md", skills); err != nil {
+	// Inject forge section into the project CLAUDE.md. Relative @AGENTS.md resolves
+	// to the project's own AGENTS.md (which carries the toolkit manifest); the
+	// global ~/.claude/CLAUDE.md import already loads the toolkit for every agent.
+	if err := ensureClaudeMDSectionAt("CLAUDE.md", "@AGENTS.md"); err != nil {
 		ui.Log.Warn(fmt.Sprintf("Could not update CLAUDE.md: %v", err))
 	}
 
@@ -250,11 +254,20 @@ func writeForgeSection(path, body, label string) error {
 }
 
 // ensureClaudeMDSectionAt adds or updates a forge section in the given CLAUDE.md
-// file. Claude resolves the `@AGENTS.md` import, so the section is just that
-// import. Uppercase so it resolves on case-sensitive filesystems (Linux/CI),
-// where the toolkit/source file is AGENTS.md.
-func ensureClaudeMDSectionAt(claudeMD string, _ []resolve.SkillInfo) error {
-	return writeForgeSection(claudeMD, "@AGENTS.md", "CLAUDE.md")
+// file. The section is a single `@import` line Claude resolves; importLine is the
+// exact import to inject. The global ~/.claude/CLAUDE.md needs an ABSOLUTE import
+// (see globalForgeImport); a per-project CLAUDE.md uses the relative @AGENTS.md
+// that resolves to the project's own AGENTS.md.
+func ensureClaudeMDSectionAt(claudeMD, importLine string) error {
+	return writeForgeSection(claudeMD, importLine, "CLAUDE.md")
+}
+
+// globalForgeImport is the import line injected into ~/.claude/CLAUDE.md. It must
+// be ABSOLUTE (@<forgeHome>/CLAUDE.md): a relative @AGENTS.md there resolves next
+// to that file — ~/.claude/AGENTS.md, the user's personal profile — not the
+// toolkit, so the toolkit would never auto-load for Claude globally.
+func globalForgeImport() string {
+	return "@" + filepath.Join(resolve.ForgeHome(), "CLAUDE.md")
 }
 
 // codexHome returns Codex's config dir ($CODEX_HOME, else ~/.codex). Empty if

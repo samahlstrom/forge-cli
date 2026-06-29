@@ -51,6 +51,55 @@ func TestWriteForgeSection(t *testing.T) {
 	}
 }
 
+func TestGlobalForgeImportIsAbsoluteToolkitPath(t *testing.T) {
+	forge := t.TempDir()
+	t.Setenv("FORGE_HOME", forge)
+
+	want := "@" + filepath.Join(forge, "CLAUDE.md")
+	if got := globalForgeImport(); got != want {
+		t.Fatalf("global import = %q, want absolute toolkit path %q", got, want)
+	}
+	// The bug: a relative @AGENTS.md in ~/.claude/CLAUDE.md resolves to the user's
+	// own ~/.claude/AGENTS.md, so the toolkit never loads. Guard against regressing.
+	if got := globalForgeImport(); got == "@AGENTS.md" || got == "@agents.md" {
+		t.Fatalf("global import is relative %q — resolves to ~/.claude/AGENTS.md, not the toolkit", got)
+	}
+}
+
+func TestEnsureClaudeMDSectionInjectsImportInsideMarkersPreservingUserContent(t *testing.T) {
+	forge := t.TempDir()
+	t.Setenv("FORGE_HOME", forge)
+
+	dir := t.TempDir()
+	claudeMD := filepath.Join(dir, "CLAUDE.md")
+	user := "# How to talk to me\n\nKeep this exactly, byte for byte.\n"
+	if err := os.WriteFile(claudeMD, []byte(user), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	imp := globalForgeImport()
+	if err := ensureClaudeMDSectionAt(claudeMD, imp); err != nil {
+		t.Fatalf("inject: %v", err)
+	}
+	got := readFile(t, claudeMD)
+
+	// The absolute import lives INSIDE the forge markers.
+	begin := strings.Index(got, forgeMarkerBegin)
+	end := strings.Index(got, forgeMarkerEnd)
+	if begin < 0 || end < 0 || begin > end {
+		t.Fatalf("forge markers missing/disordered:\n%s", got)
+	}
+	if block := got[begin : end+len(forgeMarkerEnd)]; !strings.Contains(block, imp) {
+		t.Fatalf("absolute import %q not inside forge markers:\n%s", imp, got)
+	}
+
+	// User content OUTSIDE the markers is preserved byte-for-byte.
+	outside := got[:begin] + got[end+len(forgeMarkerEnd):]
+	if !strings.Contains(outside, user) {
+		t.Fatalf("user content not preserved byte-for-byte:\noutside=%q", outside)
+	}
+}
+
 func TestEnsureCodexAgentsMDEmbedsLiteralManifest(t *testing.T) {
 	forge := t.TempDir()
 	t.Setenv("FORGE_HOME", forge)
@@ -190,7 +239,7 @@ func TestEnsureClaudeMDSectionInjectsUppercaseImport(t *testing.T) {
 	if err := os.WriteFile(claude, []byte("# Project rules\nkeep me\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := ensureClaudeMDSectionAt(claude, nil); err != nil {
+	if err := ensureClaudeMDSectionAt(claude, "@AGENTS.md"); err != nil {
 		t.Fatalf("inject: %v", err)
 	}
 	got := readFile(t, claude)
