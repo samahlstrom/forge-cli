@@ -145,6 +145,68 @@ func ListSkills() []SkillInfo {
 	return skills
 }
 
+// Summary returns a compact one-line description for the skill, used to render
+// the auto-generated AGENTS.md skills list. It prefers an optional curated
+// `summary:` frontmatter field; absent that, it falls back to the first sentence
+// of the long `description:` field. Empty if the SKILL.md can't be read.
+func (s SkillInfo) Summary() string {
+	data, err := os.ReadFile(s.Path)
+	if err != nil {
+		return ""
+	}
+	content := string(data)
+	if v := frontmatterField(content, "summary"); v != "" {
+		return v
+	}
+	return firstSentence(frontmatterField(content, "description"))
+}
+
+// frontmatterField returns the single-line value of `key:` from the leading
+// `---` frontmatter block, matched at line start. Empty if absent.
+// ponytail: handles single-line `key: value` only — no folded/multi-line YAML;
+// SKILL.md frontmatter is flat, upgrade to a YAML parser if that ever changes.
+func frontmatterField(content, key string) string {
+	if !strings.HasPrefix(content, "---") {
+		return ""
+	}
+	body := content[3:]
+	if i := strings.Index(body, "\n---"); i >= 0 {
+		body = body[:i]
+	}
+	for _, ln := range strings.Split(body, "\n") {
+		ln = strings.TrimSpace(ln)
+		if strings.HasPrefix(ln, key+":") {
+			return unquote(strings.TrimSpace(ln[len(key)+1:]))
+		}
+	}
+	return ""
+}
+
+// unquote strips a single matching pair of surrounding YAML quotes (real
+// SKILL.md files quote descriptions; the raw quotes must not leak into the line).
+func unquote(s string) string {
+	if len(s) >= 2 {
+		if q := s[0]; (q == '"' || q == '\'') && s[len(s)-1] == q {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
+}
+
+// firstSentence returns the text up to the first period followed by a space or
+// end-of-string, with the period dropped for a clean bullet line.
+// ponytail: naive period split; an abbreviation like "e.g." can cut early — fine
+// for a fallback, the curated `summary:` field is the real path.
+func firstSentence(s string) string {
+	s = strings.TrimSpace(s)
+	for i := 0; i < len(s); i++ {
+		if s[i] == '.' && (i+1 == len(s) || s[i+1] == ' ') {
+			return s[:i]
+		}
+	}
+	return s
+}
+
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()

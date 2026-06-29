@@ -58,6 +58,10 @@ func runSync(_ *cobra.Command, _ []string) error {
 	// Re-wire global skills into ~/.claude/skills/ if global install present
 	wireAllSkillsGlobal()
 
+	// Regenerate the toolkit AGENTS.md skills list from the (freshly pulled)
+	// skills so the manifest never drifts, before it's re-embedded for Codex.
+	regenerateToolkitSkills()
+
 	// Refresh Codex AGENTS.md manifests. Codex doesn't resolve @agents.md, so its
 	// copy is literal content and must be re-synced (Claude's @import is live).
 	injectCodexGlobal()
