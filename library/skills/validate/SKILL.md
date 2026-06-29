@@ -96,6 +96,48 @@ Work on a **localhost branch** with the dev server running. For each shot:
 
 ---
 
+## Visual Verification
+
+Verify implemented features work correctly through actual user interaction, not
+just automated tests. A passing test suite is not proof that the thing a user
+sees is right.
+
+### When to use
+
+- After implementing any UI feature
+- Before marking an issue complete
+- When acceptance criteria involve user-visible behavior
+- After fixing a UI bug
+
+### What counts as "visually verifiable"
+
+If it can be seen or accessed through a UI of any kind, it is visually
+verifiable — and it must be proven with captured evidence, never asserted from
+the code alone. Concretely: any change that reaches a page serving a
+`+page.svelte`, where the result is a data point, a visible button, a state, or
+**anything a user can see or interact with**. If your change can surface in the
+browser, you owe a screenshot.
+
+### Verification checklist
+
+Before marking any UI task complete:
+
+- [ ] Dev server is running and the page is reachable
+- [ ] Feature renders with no console errors
+- [ ] Elements render correctly and do not overlap incorrectly
+- [ ] User interactions behave as expected
+- [ ] Edge cases handled (empty, loading, error states)
+- [ ] Screenshot captured as evidence and posted to the Linear card
+
+### What NOT to do
+
+- Skip visual verification because "the tests pass"
+- Mark an issue complete without testing it in the browser
+- Assume dev mode catches every error — run `npm run build` too
+- Test only the happy path
+
+---
+
 ## Personas & auth
 
 A change is only validated when every persona it distinguishes is checked —
@@ -153,3 +195,33 @@ supposed to work and every view*, so they can verify the work didn't break it.
 If you cannot complete a shot (missing account, can't reach a state), say so
 plainly and stop. A gap reported honestly is recoverable; a hallucinated
 "all validated" is the exact failure this skill exists to prevent.
+
+### Write the validation receipt (PR-gate handshake)
+
+Only after the Definition of Done above is genuinely met, write the receipt the
+PR gate reads. `gh pr create` is hard-blocked until this receipt names the
+current branch. The receipt is pipe-delimited; the commander audits it without
+reading your transcript, so it must carry a **link back to the proof**:
+
+```
+<branch> | validated | <Linear issue id> | shots=<N> | <Linear comment URL> | <UTC timestamp>
+```
+
+- `shots=<N>` — the number of captured, captioned screenshots you posted.
+- `<Linear comment URL>` — the exact comment holding the shot flow (the field
+  the commander clicks to confirm those N screenshots are really there).
+
+```bash
+mkdir -p .claude && echo "$(git branch --show-current) | validated | <Linear issue id> | shots=<N> | <Linear comment URL> | $(date -u +%Y-%m-%dT%H:%M:%SZ)" > .claude/.validate-receipt
+```
+
+Writing this receipt without doing the work is the exact hallucination this
+skill exists to prevent — the gate trusts the act, and the URL lets the
+commander check the claim. A receipt whose URL has no screenshots behind it is a
+fabrication. If the change genuinely touches no UI surface (nothing a user can
+see or interact with, no page serving a `+page.svelte` reached), record that
+instead, honestly:
+
+```bash
+mkdir -p .claude && echo "$(git branch --show-current) | skipped | no UI surface touched: <one-line reason> | $(date -u +%Y-%m-%dT%H:%M:%SZ)" > .claude/.validate-receipt
+```
