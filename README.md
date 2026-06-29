@@ -45,7 +45,7 @@ forge list        # See your agents and skills
 
 ### What happens
 
-1. **`forge setup`** creates `~/.forge/` with starter agents, skills, and pipeline scripts. It detects your GitHub user via `gh`, creates a **private** `<you>/forge-toolkit` repo, and pushes — so your toolkit is backed up and portable from the start.
+1. **`forge setup`** creates an empty `~/.forge/` toolkit — forge is a pure engine and ships **no** skills, agents, or hooks of its own; you bring your own (see [Bring your own](#bring-your-own-agents-skills-hooks)). It detects your GitHub user via `gh`, creates a **private** `<you>/forge-toolkit` repo, and pushes — so your toolkit is backed up and portable from the start.
 
 2. **`forge init`** (run per-project) does four things:
    - Symlinks your skills into `.claude/skills/` so they work as slash commands
@@ -85,40 +85,30 @@ Requires [GitHub CLI](https://cli.github.com/) (`gh`) authenticated via `gh auth
 | `forge list` | List all agents and skills |
 | `forge skill list` | List skills |
 | `forge skill show <name>` | Print a skill's content |
-| `forge skill add <name>` | Create a new skill (auto-commits, pushes, wires) |
+| `forge skill add <name> [--file <path>\|--body <md>]` | Add a skill — upload an existing file/dir, paste a body, or scaffold (auto-commits, pushes, wires) |
 | `forge skill edit <name>` | Open a skill in your `$EDITOR` |
 | `forge skill remove <name>` | Remove a skill (auto-commits, pushes, unwires) |
 | `forge agent list` | List agents |
 | `forge agent show <name>` | Print an agent's definition |
-| `forge agent add <name>` | Create a new agent (auto-commits, pushes) |
+| `forge agent add <name> [--file <path>\|--body <md>]` | Add a persona — upload an existing `.md`, paste a body, or scaffold (auto-commits, pushes) |
 | `forge agent edit <name>` | Open an agent in your `$EDITOR` |
 | `forge agent remove <name>` | Remove an agent (auto-commits, pushes) |
+| `forge hook list` | List hooks declared in your toolkit manifest |
+| `forge hook add <name> --file <script> (--git-hook <type>\|--event <e> --matcher <m>) [--default]` | Upload a hook script and register it in the manifest (`--scaffold` for a blank one) |
+| `forge hook remove <name>` | Remove a hook (drops its manifest entry + script) |
 | `forge paths` | Print resolved toolkit paths as JSON |
 
 ## How it works
 
-Forge manages a personal library of markdown-based tools that Claude Code uses at runtime:
+Forge is a **pure engine**. It ships no skills, agents, or hooks — it *resolves*
+the ones in **your** toolkit at runtime and wires them into your projects:
 
-- **Agents** (`~/.forge/agents/`) — specialist agent definitions (architect, backend, frontend, quality, security, evaluators, etc.) that the pipeline dispatches as subagents
-- **Skills** (`~/.forge/skills/`) — Claude Code slash commands (`/forge`, `/ingest`, `/skill-creator`) that orchestrate multi-step workflows
-- **Pipeline** (`~/.forge/pipeline/`) — shell scripts and prompt templates used by the `/forge` skill to run intake, classification, verification, and delivery
+- **Agents** (`~/.forge/agents/`) — markdown persona definitions you add, dispatched as subagents
+- **Skills** (`~/.forge/skills/`) — Claude Code slash commands you add (each a `SKILL.md`, optionally with a `bin/`)
+- **Hooks** (`~/.forge/hooks/`) — guardrail scripts + a [manifest](#hooks) that `forge init` installs into a repo
 
-### The `/forge` skill
-
-The main workflow. When you run `/forge "Add JWT authentication"` in Claude Code, it orchestrates an autonomous pipeline:
-
-1. **Intake** — parses and scores the work description
-2. **Classify** — assigns a risk tier (T1/T2/T3)
-3. **Decompose** — architect agent breaks work into parallel-safe subtasks
-4. **Review plan** — independent reviewer validates the decomposition
-5. **Execute** — dispatches subtasks to specialist agents in isolated worktrees
-6. **Verify** — runs typecheck, lint, tests, and browser smoke tests
-7. **Evaluate** — three evaluator agents score the implementation (must reach 0.7 composite to pass)
-8. **Deliver** — creates branch, commits, pushes, opens PR
-
-### The `/ingest` skill
-
-Decomposes spec documents (PDFs, markdown, text) into structured project plans with epics, features, and atomic tasks.
+Your toolkit lives in your own private `forge-toolkit` repo and travels with you
+via `forge sync`. You populate it yourself — see [Bring your own](#bring-your-own-agents-skills-hooks).
 
 ### Pulling from the ecosystem
 
@@ -138,17 +128,36 @@ forge get someone/their-toolkit debugger --agent
 
 Works with any repo that has `skills/` or `agents/` directories — the same format used by [Anthropic's skills repo](https://github.com/anthropics/skills).
 
-### Adding and removing tools
+### Bring your own (agents, skills, hooks)
+
+forge ships nothing personal — you add your own agents, skills, and hooks to your
+toolkit through the CLI, and `forge sync` pushes them to your `forge-toolkit`
+repo. Each `add` accepts `--file <path>` to **upload something you already
+wrote** (a whole skill directory, a persona, a hook script), so you don't have to
+paste markdown inline.
 
 ```bash
-# Skills — auto-commit, push to GitHub, wire into current project
+# Skills — scaffold, paste a body, or upload an existing file/dir (preserving bin/ exec bits)
+forge skill add my-skill                                  # scaffold a blank skill
 forge skill add my-skill --body '---\nname: my-skill\n---\n\n# my-skill'
+forge skill add slacker  --file ./skills/slacker          # upload a whole skill directory
 forge skill remove my-skill
 
-# Agents — auto-commit, push to GitHub
-forge agent add my-agent --body '# my-agent\n\nDoes something useful.'
+# Agents (personas) — scaffold, paste a body, or upload an existing .md
+forge agent add my-agent --file ./personas/architect.md   # upload a persona you wrote
 forge agent remove my-agent
+
+# Hooks — upload an existing script (primary) or scaffold a blank one, then it's
+# registered in the manifest so `forge init` installs it.
+forge hook add my-gate --file ./my-gate.sh --git-hook pre-push --default
+forge hook add pr-check --file ./pr-check.sh --event PreToolUse --matcher Bash
+forge hook add new-gate --scaffold --git-hook pre-push    # blank executable script
+forge hook list
+forge hook remove my-gate
 ```
+
+All of these auto-commit and push to your toolkit; on another machine, `forge
+sync` pulls them and re-wires.
 
 ### What forge init does to your project
 
@@ -173,8 +182,10 @@ travel with you to any repo on any machine — not just your slash commands.
 ### The manifest
 
 `~/.forge/hooks/manifest.json` is the single source of truth. The installer walks
-it generically (switching on `kind`, never on a hook's name), so adding a hook is a
-manifest edit, not a code change:
+it generically (switching on `kind`, never on a hook's name). You don't hand-edit
+it — **`forge hook add`** uploads the script and writes the entry for you (and
+`forge hook remove` deletes both), so adding a hook is a CLI call, not a code
+change:
 
 ```json
 {
@@ -243,36 +254,23 @@ Claude-settings hooks are **deep-merged** into the committed `.claude/settings.j
 
 ## Toolkit structure
 
+`forge setup` creates this empty (only a git repo). You fill it in with `forge
+skill add` / `agent add` / `hook add`. An **example** populated toolkit:
+
 ```
-~/.forge/                  # A git repo — your personal toolkit
-├── agents/                # Agent definitions (.md)
+~/.forge/                  # A git repo — your personal toolkit (you populate it)
+├── agents/                # Personas you added (.md)
 │   ├── architect.md
-│   ├── backend.md
-│   ├── code-quality.md
-│   ├── edgar.md
-│   ├── frontend.md
-│   ├── quality.md
-│   ├── security.md
-│   ├── um-actually.md
-│   └── visual-qa.md
-├── skills/                # Skill definitions (SKILL.md per skill)
-│   ├── evaluate/SKILL.md
-│   ├── forge/SKILL.md
-│   ├── ingest/SKILL.md
-│   ├── skill-creator/SKILL.md
-│   └── validate/SKILL.md
-├── hooks/                 # Hooks installed by forge init (see "Hooks")
-│   ├── manifest.json      # Declares which hooks install, and how
-│   ├── pre-push-validate.sh   # git pre-push gate (default)
-│   └── validate-gate.sh   # PreToolUse(Bash) gate (opt-in, off by default)
-└── pipeline/              # Pipeline scripts and prompts
-    ├── intake.sh
-    ├── classify.md
-    ├── helpers.sh
-    ├── review-plan.md
-    ├── verify.sh
-    ├── browser-smoke.sh
-    └── deliver.sh
+│   └── reviewer.md
+├── skills/                # Skills you added (SKILL.md per skill, optional bin/)
+│   ├── my-workflow/SKILL.md
+│   └── slacker/
+│       ├── SKILL.md
+│       └── bin/slack-api  # executable; preserved on upload
+├── hooks/                 # Hooks you added (installed into repos by forge init)
+│   ├── manifest.json      # forge hook add writes this — declares which hooks install, and how
+│   └── my-gate.sh         # a git pre-push gate (referenced by the manifest)
+└── ...                    # anything else you sync (scripts, prompts, docs)
 ```
 
 ## Requirements

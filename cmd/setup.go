@@ -25,8 +25,9 @@ func init() {
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Create your personal toolkit at ~/.forge/",
-		Long: `Creates a new toolkit at ~/.forge/ with starter agents, skills,
-and pipeline scripts. The toolkit is a local git repository backed
+		Long: `Creates an empty toolkit at ~/.forge/. forge is a pure engine and
+ships no skills, agents, or hooks of its own — you add your own with
+'forge skill/agent/hook add'. The toolkit is a local git repository backed
 by a private GitHub repo (forge-toolkit) for cross-machine sync.
 
 First time:
@@ -73,10 +74,17 @@ func freshSetup(home, ghUser string) error {
 		return fmt.Errorf("failed to create %s: %w", home, err)
 	}
 
-	// Extract embedded starter content
-	ui.Log.Step("Extracting starter toolkit...")
+	// Extract embedded content (the engine ships only a placeholder).
 	if err := extractEmbedded(StarterContent, "library", home); err != nil {
 		return fmt.Errorf("failed to extract starter content: %w", err)
+	}
+
+	// Scaffold the toolkit's content dirs so a fresh (empty) toolkit still
+	// registers as set up and `forge skill/agent/hook add` have somewhere to
+	// write. The .gitkeep files keep the otherwise-empty dirs under version
+	// control so they survive a clone onto another machine.
+	if err := scaffoldToolkitDirs(home); err != nil {
+		return fmt.Errorf("failed to scaffold toolkit: %w", err)
 	}
 
 	// Initialize git repo
@@ -101,7 +109,8 @@ func freshSetup(home, ghUser string) error {
 	ui.Log.Success(fmt.Sprintf("Toolkit created at %s", home))
 	ui.Log.Step(fmt.Sprintf("Agents: %s", resolve.AgentsDir()))
 	ui.Log.Step(fmt.Sprintf("Skills: %s", resolve.SkillsDir()))
-	ui.Log.Step(fmt.Sprintf("Pipeline: %s", resolve.PipelineDir()))
+	ui.Log.Step(fmt.Sprintf("Hooks:  %s", resolve.HooksDir()))
+	ui.Log.Step("Empty for now — add your own with 'forge skill add', 'forge agent add', or 'forge hook add'.")
 
 	// Create remote repo and wire it up
 	if ghUser != "" {
@@ -242,6 +251,26 @@ func repoExists(owner, name string) bool {
 	}
 
 	return strings.TrimSpace(string(out)) != ""
+}
+
+// scaffoldToolkitDirs creates the toolkit's content directories (agents, skills,
+// hooks) with a .gitkeep in each. The dirs make resolve.IsSetup() true and give
+// `forge skill/agent/hook add` a place to write; the .gitkeep keeps the empty
+// dirs tracked so they survive a clone onto another machine.
+func scaffoldToolkitDirs(home string) error {
+	for _, d := range []string{"agents", "skills", "hooks"} {
+		dir := filepath.Join(home, d)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		keep := filepath.Join(dir, ".gitkeep")
+		if _, err := os.Stat(keep); os.IsNotExist(err) {
+			if err := os.WriteFile(keep, nil, 0o644); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // extractEmbedded walks the embedded FS starting at root and writes files to dst.
