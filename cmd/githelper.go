@@ -8,16 +8,23 @@ import (
 	"github.com/samahlstrom/forge-cli/internal/ui"
 )
 
-// commitAndPush stages, commits, and pushes a file in the ~/.forge/ toolkit repo.
-// If the toolkit isn't a git repo or has no remote, it skips gracefully.
+// commitAndPush stages, commits, and pushes a single file in the ~/.forge/
+// toolkit repo. If the toolkit isn't a git repo or has no remote, it skips
+// gracefully.
 func commitAndPush(relPath, commitMsg string) {
+	commitAndPushN(commitMsg, relPath)
+}
+
+// commitAndPushN is commitAndPush for one or more paths (e.g. a hook script plus
+// the manifest that registers it) committed together.
+func commitAndPushN(commitMsg string, relPaths ...string) {
 	home := resolve.ForgeHome()
 
 	if !resolve.IsGitRepo() {
 		return
 	}
 
-	gitAdd := forgeGit(home, "add", relPath)
+	gitAdd := forgeGit(home, append([]string{"add"}, relPaths...)...)
 	if err := gitAdd.Run(); err != nil {
 		ui.Log.Warn("Failed to stage — commit manually.")
 		return

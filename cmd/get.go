@@ -120,7 +120,7 @@ func pullSkill(tmpDir, name string) error {
 		return fmt.Errorf("skill %q already exists in your toolkit — remove it first or use a different name", name)
 	}
 
-	if err := copyDir(srcDir, dstDir); err != nil {
+	if err := util.CopyTree(srcDir, dstDir); err != nil {
 		return fmt.Errorf("failed to copy skill: %w", err)
 	}
 
@@ -257,31 +257,6 @@ func findRemoteAgents(tmpDir string) []string {
 		}
 	}
 	return agents
-}
-
-// copyDir recursively copies a directory tree.
-func copyDir(src, dst string) error {
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dst, rel)
-
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, data, 0o644)
-	})
 }
 
 // expandRepoURL converts GitHub shorthand (user/repo) to a full URL.

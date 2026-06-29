@@ -14,7 +14,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var agentBody string
+var (
+	agentBody string
+	agentFile string
+)
 
 func init() {
 	agentCmd := &cobra.Command{
@@ -49,6 +52,7 @@ func init() {
 		RunE:  runAgentAdd,
 	}
 	addCmd.Flags().StringVar(&agentBody, "body", "", "Full markdown body for the agent")
+	addCmd.Flags().StringVar(&agentFile, "file", "", "Upload an existing agent .md file")
 	agentCmd.AddCommand(addCmd)
 
 	agentCmd.AddCommand(&cobra.Command{
@@ -121,16 +125,25 @@ func runAgentAdd(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("agent %q already exists — use 'forge agent edit %s' instead", name, name)
 	}
 
-	content := agentBody
-	if content == "" {
-		content = scaffoldAgent(name)
+	// --file uploads an existing persona; otherwise --body or a scaffold seeds one.
+	if agentFile != "" {
+		if !util.Exists(agentFile) {
+			return fmt.Errorf("file not found: %s", agentFile)
+		}
+		if err := util.CopyFile(agentFile, agentPath, 0); err != nil {
+			return fmt.Errorf("failed to copy agent: %w", err)
+		}
+		ui.Log.Success(fmt.Sprintf("Added agent: %s", name))
+	} else {
+		content := agentBody
+		if content == "" {
+			content = scaffoldAgent(name)
+		}
+		if err := util.WriteText(agentPath, content); err != nil {
+			return fmt.Errorf("failed to write agent: %w", err)
+		}
+		ui.Log.Success(fmt.Sprintf("Created %s", agentPath))
 	}
-
-	if err := util.WriteText(agentPath, content); err != nil {
-		return fmt.Errorf("failed to write agent: %w", err)
-	}
-
-	ui.Log.Success(fmt.Sprintf("Created %s", agentPath))
 
 	commitAndPush(
 		filepath.Join("agents", name+".md"),
