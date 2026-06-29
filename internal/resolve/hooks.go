@@ -6,7 +6,8 @@ import (
 	"path/filepath"
 )
 
-// HookInfo describes one hook declared in library/hooks/manifest.json. The
+// HookInfo describes one hook declared in the toolkit's hooks manifest
+// (~/.forge/hooks/manifest.json, resolved at runtime via HooksDir()). The
 // installer walks these generically — it switches on Kind, never on Name — so
 // new hooks are added by editing the manifest, not the Go code.
 type HookInfo struct {
@@ -29,7 +30,7 @@ type ScriptInfo struct {
 	Default bool   `json:"default"`
 }
 
-// HooksManifest is the parsed library/hooks/manifest.json.
+// HooksManifest is the parsed toolkit hooks manifest (~/.forge/hooks/manifest.json).
 type HooksManifest struct {
 	Hooks   []HookInfo   `json:"hooks"`
 	Scripts []ScriptInfo `json:"scripts"`
