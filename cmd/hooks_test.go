@@ -343,3 +343,70 @@ func TestInstallRepoHooksSkipsUnknownKind(t *testing.T) {
 		t.Fatalf("unknown kind should install nothing")
 	}
 }
+
+// ---- installGlobalHooks (global-scoped claude-settings hooks) ----
+
+func TestInstallGlobalHooksInstallsGlobalSettingsHook(t *testing.T) {
+	manifest := `{"hooks":[
+  {"name":"ponytail-preload","kind":"claude-settings-hook","event":"PreToolUse","matcher":"Edit|Write|MultiEdit|NotebookEdit","script":"validate-gate.sh","scope":"global","default":true}
+]}`
+	setupToolkitWithManifest(t, manifest) // sets FORGE_HOME + writes the scripts
+	claudeDir := t.TempDir()
+
+	installGlobalHooks(claudeDir, nil)
+
+	settingsPath := filepath.Join(claudeDir, "settings.json")
+	got := preToolUseCommands(t, readJSON(t, settingsPath), "Edit|Write|MultiEdit|NotebookEdit")
+	if len(got) != 1 {
+		t.Fatalf("global settings hook should be merged, got %v", got)
+	}
+	if !strings.HasSuffix(got[0], filepath.Join("hooks", "validate-gate.sh")) {
+		t.Fatalf("command should point at the toolkit script, got %q", got[0])
+	}
+}
+
+func TestInstallGlobalHooksSkipsRepoScopedHook(t *testing.T) {
+	manifest := `{"hooks":[
+  {"name":"validate-gate","kind":"claude-settings-hook","event":"PreToolUse","matcher":"Bash","script":"validate-gate.sh","scope":"repo","default":true}
+]}`
+	setupToolkitWithManifest(t, manifest)
+	claudeDir := t.TempDir()
+
+	installGlobalHooks(claudeDir, nil)
+
+	if _, err := os.Stat(filepath.Join(claudeDir, "settings.json")); err == nil {
+		t.Fatalf("repo-scoped hook must NOT be installed globally")
+	}
+}
+
+func TestInstallGlobalHooksHonorsDefaultFalse(t *testing.T) {
+	manifest := `{"hooks":[
+  {"name":"opt-in-global","kind":"claude-settings-hook","event":"PreToolUse","matcher":"Edit","script":"validate-gate.sh","scope":"global","default":false}
+]}`
+	setupToolkitWithManifest(t, manifest)
+	claudeDir := t.TempDir()
+
+	installGlobalHooks(claudeDir, nil) // no opt-ins
+	if _, err := os.Stat(filepath.Join(claudeDir, "settings.json")); err == nil {
+		t.Fatalf("default:false global hook must NOT be auto-installed")
+	}
+
+	installGlobalHooks(claudeDir, map[string]bool{"opt-in-global": true})
+	got := preToolUseCommands(t, readJSON(t, filepath.Join(claudeDir, "settings.json")), "Edit")
+	if len(got) != 1 {
+		t.Fatalf("opted-in global hook should be merged, got %v", got)
+	}
+}
+
+func TestInstallRepoHooksSkipsGlobalScopedHook(t *testing.T) {
+	manifest := `{"hooks":[
+  {"name":"ponytail-preload","kind":"claude-settings-hook","event":"PreToolUse","matcher":"Edit|Write|MultiEdit|NotebookEdit","script":"validate-gate.sh","scope":"global","default":true}
+]}`
+	repo := setupToolkitWithManifest(t, manifest)
+
+	installRepoHooks(repo, nil)
+
+	if _, err := os.Stat(filepath.Join(repo, ".claude", "settings.json")); err == nil {
+		t.Fatalf("global-scoped hook must NOT be installed per-repo")
+	}
+}
