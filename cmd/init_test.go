@@ -162,3 +162,45 @@ func readFile(t *testing.T, p string) string {
 	}
 	return string(data)
 }
+
+// After the toolkit rename agents.md -> AGENTS.md, the installer must still read
+// the manifest (case-robust); on case-sensitive filesystems the old lowercase
+// literal would miss it entirely.
+func TestForgeManifestBodyReadsUppercaseAGENTS(t *testing.T) {
+	forge := t.TempDir()
+	t.Setenv("FORGE_HOME", forge)
+	if err := os.WriteFile(filepath.Join(forge, "AGENTS.md"), []byte("# Forge Toolkit\nUPPERCASE MANIFEST\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body, ok := forgeManifestBody()
+	if !ok {
+		t.Fatal("forgeManifestBody: want ok reading AGENTS.md, got false")
+	}
+	if !strings.Contains(body, "UPPERCASE MANIFEST") {
+		t.Fatalf("forgeManifestBody did not read AGENTS.md content:\n%s", body)
+	}
+}
+
+// ensureClaudeMDSectionAt must inject the UPPERCASE "@AGENTS.md" import so it
+// resolves on case-sensitive filesystems (Linux/CI), and must preserve existing
+// content. (Lowercase "@agents.md" would dangle where the file is AGENTS.md.)
+func TestEnsureClaudeMDSectionInjectsUppercaseImport(t *testing.T) {
+	dir := t.TempDir()
+	claude := filepath.Join(dir, "CLAUDE.md")
+	if err := os.WriteFile(claude, []byte("# Project rules\nkeep me\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureClaudeMDSectionAt(claude, nil); err != nil {
+		t.Fatalf("inject: %v", err)
+	}
+	got := readFile(t, claude)
+	if !strings.Contains(got, "@AGENTS.md") || !strings.Contains(got, forgeMarkerBegin) {
+		t.Fatalf("CLAUDE.md should get the uppercase @AGENTS.md import:\n%s", got)
+	}
+	if strings.Contains(got, "@agents.md") {
+		t.Fatalf("CLAUDE.md must not inject lowercase @agents.md (dangles on case-sensitive FS):\n%s", got)
+	}
+	if !strings.Contains(got, "keep me") {
+		t.Fatalf("injection clobbered existing content:\n%s", got)
+	}
+}
