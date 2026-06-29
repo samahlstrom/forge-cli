@@ -1,16 +1,37 @@
 # Agent Instructions
 
+forge-cli — a Go monolith CLI tool; the pure engine behind the forge toolkit.
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
-## Quick Reference
+## Project
 
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
-```
+- **Name**: forge-cli
+- **Language**: Go
+- **Architecture**: monolith CLI tool
+
+## Build & Test
+
+- **Build**: `go build ./...`
+- **Typecheck**: `go vet ./...`
+- **Lint**: `golangci-lint run`
+- **Test**: `go test ./...`
+
+## Anti-Patterns (Blockers)
+
+Do NOT introduce these:
+- `TODO` / `FIXME` comments
+- Hardcoded secrets or API keys
+
+## Task Tracking (bd)
+
+- Work is tracked via `bd` (steveyegge/beads) — a Dolt-backed issue tracker
+- `bd ready` — see tasks with no open blockers
+- `bd show <id>` — view issue details
+- `bd update <id> --claim` — atomically claim a task
+- `bd close <id> --reason "..."` — mark work complete
+- `bd update <id> --add-label "key:value"` — add labels (NO `-l` shorthand for update)
+- `bd ready -l "key:value"` — filter by labels (query commands DO support `-l`)
+- `bd dolt push` — push beads data to the remote
 
 ## Non-Interactive Shell Commands
 
@@ -82,3 +103,69 @@ bd close <id>         # Complete work
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
+
+## Releasing
+
+After committing, use `make ship` to push, release, and update the local binary:
+
+```bash
+git add <files>
+git commit -m "message"   # post-commit hook auto-tags vX.Y.Z
+make ship                 # push → GitHub Action → goreleaser → brew upgrade
+```
+
+- Tags are created automatically by `.githooks/post-commit` (patch+1, rolls over at 99)
+- `make ship` pushes the commit + tag, waits for the GitHub Action to finish, then runs `brew upgrade`
+- New clones need `make setup` to enable the git hooks
+
+## Forge Toolkit
+
+forge-cli is the **pure engine** — it bundles no skills of its own. Skills and hooks live in the
+**forge-toolkit** (`~/.forge/`), installed into a repo by `forge init` / `forge sync`. Run
+`forge list` to see what your toolkit currently provides.
+
+**Routing rule:** any new skill or hook is added to the forge-toolkit first; only scope it to a
+specific repo when explicitly stated otherwise.
+
+### CLI Commands
+
+```bash
+forge list              # See all skills and agents
+forge skill add <name>  # Create a new skill
+forge skill remove <name> # Remove a skill
+forge agent add <name>  # Create a new agent
+forge agent remove <name> # Remove an agent
+forge sync              # Pull/push toolkit changes
+forge get <repo> <name> # Pull a skill from any repo
+```
+
+### Hooks
+
+`forge init` (and `forge sync`) also install **hooks** from `~/.forge/hooks/manifest.json`,
+so the workflow's guardrails travel with the toolkit — not just skills. The installer
+walks the manifest generically (it switches on `kind`, never a hook's name); add a hook
+by editing the manifest, not Go code. Each manifest entry sets `default` (auto-install)
+and `scope` (`repo`); install an opt-in hook with `forge init --enable-hook <name>`.
+
+- **Primary — git `pre-push` gate (`pre-push-validate.sh`, default).** Blocks
+  `git push` of a branch whose receipt is missing/mismatched. `forge init` writes a
+  committed `.githooks/pre-push` wrapper and sets `core.hooksPath` to `.githooks`
+  (relative → resolves per worktree, travels with the code); the wrapper resolves the
+  personal gate at runtime (`$FORGE_HOME`/`$HOME/.forge`), so **no hardcoded paths**.
+  It inspects the actual push refs on stdin, so it never false-blocks a message or
+  script that merely contains "git push". A pre-existing hook is preserved as
+  `pre-push.local` and chained; an already-set `core.hooksPath` is respected;
+  re-runs are idempotent (`# forge-managed:` sentinel).
+- **Receipt handshake.** `/validate` writes `<repo>/.claude/.validate-receipt` at its
+  Definition of Done; line 1 is pipe-delimited and field 1 is the branch. Both gates
+  read it — the push is allowed only when the receipt names the branch being pushed.
+- **Opt-in — `PreToolUse(Bash)` validate-gate (`validate-gate.sh`, default:false).**
+  Hard-blocks `gh pr create` until the receipt exists. Its command string-match is
+  leaky (can false-block any Bash containing `gh pr create`), so it is **never**
+  installed globally or into a commander session — only into a per-repo committed
+  `.claude/settings.json` when explicitly opted in.
+- **settings.json deep-merge guarantees.** Claude-settings hooks are deep-merged into
+  the committed `.claude/settings.json` (not `settings.local.json`): every other key
+  is preserved (`permissions`, unrelated matchers), the command is appended only if
+  absent (idempotent), and the file is pretty-printed back. The forge binary does the
+  write, bypassing Claude's auto-mode classifier that blocks agent edits to settings.
