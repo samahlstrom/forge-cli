@@ -23,25 +23,29 @@ const gitHookSentinel = "# forge-managed:"
 // never abort init/sync.
 func installRepoHooks(repoRoot string, enable map[string]bool) {
 	for _, h := range resolve.ListHooks() {
-		if h.Scope != "" && h.Scope != "repo" {
-			continue // global-scoped hooks are not installed per repo
-		}
 		if !h.Default && !enable[h.Name] {
 			continue // default:false and not opted in
 		}
 
-		// The committed wrappers/settings entries point at the toolkit script by
-		// absolute path; make sure it's actually executable.
-		ensureExecutable(resolve.HookScriptPath(h.Script))
-
 		switch h.Kind {
 		case "git-hook":
+			// git hooks are per-repo by nature; a "global" scope is meaningless.
+			if h.Scope == "global" {
+				continue
+			}
+			ensureExecutable(resolve.HookScriptPath(h.Script))
 			if err := installGitHook(repoRoot, h); err != nil {
 				ui.Log.Warn(fmt.Sprintf("Could not install git hook %s: %v", h.Name, err))
 			} else {
 				ui.Log.Success(fmt.Sprintf("Installed git %s hook (%s)", h.GitHook, h.Name))
 			}
 		case "claude-settings-hook":
+			// claude-settings hooks default to global; only an explicit scope:repo
+			// installs one per-repo (the global path is installGlobalHooks).
+			if h.Scope != "repo" {
+				continue
+			}
+			ensureExecutable(resolve.HookScriptPath(h.Script))
 			settingsPath := filepath.Join(repoRoot, ".claude", "settings.json")
 			command := resolve.HookScriptPath(h.Script)
 			if err := mergeClaudeSettingsHook(settingsPath, h.Event, h.Matcher, command); err != nil {
@@ -55,23 +59,21 @@ func installRepoHooks(repoRoot string, enable map[string]bool) {
 	}
 }
 
-// installGlobalHooks walks the toolkit's hooks manifest and merges every
-// global-scoped claude-settings hook (default:true or opted-in) into the global
+// installGlobalHooks walks the toolkit's hooks manifest and merges every global
+// claude-settings hook (default:true or opted-in) into the global
 // ~/.claude/settings.json, so the discipline fires for every agent and session.
-// Git hooks are inherently per-repo, so claude-settings-hook is the only kind
-// that installs globally. The forge binary does this write to bypass Claude's
-// auto-mode classifier that blocks agent edits to settings.
+// claude-settings hooks default to global — only an explicit scope:repo keeps one
+// per-repo (the per-repo path is installRepoHooks). Git hooks are per-repo by
+// nature, so they never install globally. The forge binary does this write to
+// bypass Claude's auto-mode classifier that blocks agent edits to settings.
 func installGlobalHooks(claudeDir string, enable map[string]bool) {
 	settingsPath := filepath.Join(claudeDir, "settings.json")
 	for _, h := range resolve.ListHooks() {
-		if h.Scope != "global" {
-			continue // only global-scoped hooks install globally
+		if h.Kind != "claude-settings-hook" || h.Scope == "repo" {
+			continue // git hooks are per-repo; explicit scope:repo stays per-repo
 		}
 		if !h.Default && !enable[h.Name] {
 			continue // default:false and not opted in
-		}
-		if h.Kind != "claude-settings-hook" {
-			continue // git hooks are per-repo; nothing else is global-installable
 		}
 		ensureExecutable(resolve.HookScriptPath(h.Script))
 		command := resolve.HookScriptPath(h.Script)

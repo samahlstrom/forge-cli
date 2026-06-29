@@ -17,7 +17,7 @@ type HookInfo struct {
 	Event   string `json:"event"`   // claude-settings-hook only, e.g. "PreToolUse"
 	Matcher string `json:"matcher"` // claude-settings-hook only, e.g. "Bash"
 	Script  string `json:"script"`  // script filename under HooksDir()
-	Scope   string `json:"scope"`   // "repo" | "global"
+	Scope   string `json:"scope"`   // "repo" | "global"; claude-settings hooks default to global, git hooks are per-repo
 	Default bool   `json:"default"` // install automatically during init?
 	Note    string `json:"note"`
 }

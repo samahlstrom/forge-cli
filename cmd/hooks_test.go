@@ -410,3 +410,48 @@ func TestInstallRepoHooksSkipsGlobalScopedHook(t *testing.T) {
 		t.Fatalf("global-scoped hook must NOT be installed per-repo")
 	}
 }
+
+// ---- default-global scope for claude-settings hooks ----
+// A claude-settings hook with NO scope (or scope:global) installs globally; only
+// an explicit scope:repo keeps it per-repo. git-hooks are per-repo by nature.
+
+func TestInstallGlobalHooksDefaultsNoScopeToGlobal(t *testing.T) {
+	manifest := `{"hooks":[
+  {"name":"noscope","kind":"claude-settings-hook","event":"PreToolUse","matcher":"Edit","script":"validate-gate.sh","default":true}
+]}`
+	setupToolkitWithManifest(t, manifest)
+	claudeDir := t.TempDir()
+
+	installGlobalHooks(claudeDir, nil)
+
+	got := preToolUseCommands(t, readJSON(t, filepath.Join(claudeDir, "settings.json")), "Edit")
+	if len(got) != 1 {
+		t.Fatalf("no-scope claude-settings hook should default to global, got %v", got)
+	}
+}
+
+func TestInstallRepoHooksSkipsNoScopeSettingsHook(t *testing.T) {
+	manifest := `{"hooks":[
+  {"name":"noscope","kind":"claude-settings-hook","event":"PreToolUse","matcher":"Edit","script":"validate-gate.sh","default":true}
+]}`
+	repo := setupToolkitWithManifest(t, manifest)
+
+	installRepoHooks(repo, nil)
+
+	if _, err := os.Stat(filepath.Join(repo, ".claude", "settings.json")); err == nil {
+		t.Fatalf("no-scope claude-settings hook is global by default and must NOT install per-repo")
+	}
+}
+
+func TestInstallRepoHooksInstallsNoScopeGitHook(t *testing.T) {
+	manifest := `{"hooks":[
+  {"name":"pre-push-validate","kind":"git-hook","gitHook":"pre-push","script":"pre-push-validate.sh","default":true}
+]}`
+	repo := setupToolkitWithManifest(t, manifest)
+
+	installRepoHooks(repo, nil)
+
+	if _, err := os.Stat(filepath.Join(repo, ".githooks", "pre-push")); err != nil {
+		t.Fatalf("no-scope git-hook must still install per-repo (git hooks are per-repo by nature): %v", err)
+	}
+}
