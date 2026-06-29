@@ -63,6 +63,9 @@ func runSync(_ *cobra.Command, _ []string) error {
 	injectCodexGlobal()
 	if isProjectInitialized() {
 		_ = ensureCodexAgentsMDAt("AGENTS.md")
+		// Refresh repo-scoped default hooks (idempotent). Opt-in hooks already
+		// merged into the committed settings.json persist; we never remove them.
+		installRepoHooks(".", nil)
 	}
 
 	return nil

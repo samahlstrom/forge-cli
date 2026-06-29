@@ -22,13 +22,16 @@ const forgeMarkerEnd = "<!-- END FORGE INTEGRATION -->"
 
 var globalFlag bool
 var forceFlag bool
+var enableHookFlags []string
 
 func init() {
 	initCmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize forge skills in the current project (or globally)",
 		Long: `Symlinks your toolkit's skills into .claude/skills/ so they're
-available as slash commands in Claude Code.
+available as slash commands in Claude Code, and installs the toolkit's
+default hooks (e.g. the git pre-push validation gate) from the hooks
+manifest.
 
 Use --global to install skills into ~/.claude/skills/ instead, making
 them available in every Claude Code session (CLI, Desktop, VS Code,
@@ -38,13 +41,29 @@ Use --force to overwrite existing non-symlink skill directories
 (useful when ~/.claude/skills/ contains stale copies from earlier
 installs).
 
+Use --enable-hook <name> (repeatable) to install an opt-in hook that is
+off by default in the manifest (e.g. the leaky PreToolUse validate-gate).
+
 Skills are symlinked, not copied — running 'forge sync' updates them
 everywhere automatically.`,
 		RunE: runInit,
 	}
 	initCmd.Flags().BoolVarP(&globalFlag, "global", "g", false, "Install skills globally into ~/.claude/ (available in all projects and interfaces)")
 	initCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Overwrite existing non-symlink skill directories")
+	initCmd.Flags().StringSliceVar(&enableHookFlags, "enable-hook", nil, "Install an opt-in (default:false) hook by name; repeatable")
 	rootCmd.AddCommand(initCmd)
+}
+
+// enabledHooks returns the set of opt-in hooks requested via --enable-hook.
+func enabledHooks() map[string]bool {
+	if len(enableHookFlags) == 0 {
+		return nil
+	}
+	m := make(map[string]bool, len(enableHookFlags))
+	for _, name := range enableHookFlags {
+		m[strings.TrimSpace(name)] = true
+	}
+	return m
 }
 
 func runInit(_ *cobra.Command, _ []string) error {
@@ -157,6 +176,10 @@ func runInitLocal(skills []resolve.SkillInfo) error {
 	if err := ensureCodexAgentsMDAt("AGENTS.md"); err != nil {
 		ui.Log.Warn(fmt.Sprintf("Could not update AGENTS.md: %v", err))
 	}
+
+	// Install repo-scoped hooks from the toolkit manifest (git pre-push gate by
+	// default; opt-in hooks only when requested via --enable-hook).
+	installRepoHooks(".", enabledHooks())
 
 	return nil
 }
