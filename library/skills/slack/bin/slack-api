@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+# Thin wrapper around the Slack Web API.
+# Auth: export SLACK_TOKEN=xoxb-...
+# Usage: slack-api <command> [args...]
+
+set -euo pipefail
+
+BASE="https://slack.com/api"
+
+die() { echo "error: $*" >&2; exit 1; }
+require() { command -v "$1" >/dev/null 2>&1 || die "$1 is required (brew install $1)"; }
+
+require curl
+require jq
+
+cmd="${1:-help}"; shift || true
+
+# Help doesn't need a token
+if [[ "$cmd" == "help" || "$cmd" == "--help" || "$cmd" == "-h" ]]; then
+  cat <<'EOF'
+slack-api — Slack Web API wrapper
+Auth: export SLACK_TOKEN=xoxb-...
+
+Commands:
+  whoami                           Show authenticated user/team
+  channels                         List channels (id, name, member count)
+  history <channel-id> [limit]     Read recent messages (default 20)
+  thread  <channel-id> <ts> [lim]  Read thread replies
+  post    <channel> <text>         Post message to channel or channel ID
+             [--thread <ts>]       Optionally reply to a thread
+  dm      <user-id> <text>         Send DM to a user
+  search  <query> [count]          Search messages (default 20)
+  users                            List workspace members
+  upload  <channel-id> <file>      Upload a file [comment]
+
+Channel arg accepts both IDs (C123...) and names (#general or general).
+Output is JSON (jq-filtered). Pipe to jq for further processing.
+EOF
+  exit 0
+fi
+
+[[ -n "${SLACK_TOKEN:-}" ]] || die "SLACK_TOKEN is not set. Export a bot token: export SLACK_TOKEN=xoxb-..."
+
+get() {
+  local endpoint="$1"; shift
+  curl -sf -G "${BASE}/${endpoint}" \
+    -H "Authorization: Bearer ${SLACK_TOKEN}" \
+    "$@"
+}
+
+post() {
+  local endpoint="$1"; shift
+  curl -sf -X POST "${BASE}/${endpoint}" \
+    -H "Authorization: Bearer ${SLACK_TOKEN}" \
+    -H "Content-Type: application/json; charset=utf-8" \
+    "$@"
+}
+
+check_ok() {
+  local resp="$1"
+  local ok; ok=$(echo "$resp" | jq -r '.ok')
+  if [[ "$ok" != "true" ]]; then
+    local err; err=$(echo "$resp" | jq -r '.error // "unknown error"')
+    die "Slack API error: $err"
+  fi
+}
+
+case "$cmd" in
+  post|send)
+    # slack-api post <channel-id-or-name> <text> [--thread <ts>]
+    channel="${1:?Usage: slack-api post <channel> <text> [--thread <ts>]}"
+    text="${2:?Missing message text}"
+    thread_ts="${4:-}"  # optional --thread <ts>
+    if [[ "${3:-}" == "--thread" ]]; then thread_ts="${4:-}"; fi
+    payload=$(jq -n \
+      --arg ch "$channel" \
+      --arg tx "$text" \
+      --arg ts "$thread_ts" \
+      'if $ts != "" then {channel:$ch, text:$tx, thread_ts:$ts} else {channel:$ch, text:$tx} end')
+    resp=$(post "chat.postMessage" -d "$payload")
+    check_ok "$resp"
+    echo "$resp" | jq '{ok, ts: .ts, channel: .channel}'
+    ;;
+
+  channels|list-channels)
+    # slack-api channels [--limit N] [--cursor <cursor>]
+    limit="${2:-200}"
+    resp=$(get "conversations.list" \
+      --data-urlencode "exclude_archived=true" \
+      --data-urlencode "types=public_channel,private_channel" \
+      --data-urlencode "limit=${limit}")
+    check_ok "$resp"
+    echo "$resp" | jq '.channels[] | {id, name, is_private, num_members}'
+    ;;
+
+  history|read)
+    # slack-api history <channel-id> [limit]
+    channel="${1:?Usage: slack-api history <channel-id> [limit]}"
+    limit="${2:-20}"
+    resp=$(get "conversations.history" \
+      --data-urlencode "channel=${channel}" \
+      --data-urlencode "limit=${limit}")
+    check_ok "$resp"
+    echo "$resp" | jq '.messages[] | {ts, user, text, thread_ts: (.thread_ts // null)}'
+    ;;
+
+  thread)
+    # slack-api thread <channel-id> <thread-ts> [limit]
+    channel="${1:?Usage: slack-api thread <channel-id> <thread-ts> [limit]}"
+    ts="${2:?Missing thread_ts}"
+    limit="${3:-50}"
+    resp=$(get "conversations.replies" \
+      --data-urlencode "channel=${channel}" \
+      --data-urlencode "ts=${ts}" \
+      --data-urlencode "limit=${limit}")
+    check_ok "$resp"
+    echo "$resp" | jq '.messages[] | {ts, user, text}'
+    ;;
+
+  search)
+    # slack-api search <query> [count]
+    query="${1:?Usage: slack-api search <query> [count]}"
+    count="${2:-20}"
+    resp=$(get "search.messages" \
+      --data-urlencode "query=${query}" \
+      --data-urlencode "count=${count}" \
+      --data-urlencode "sort=timestamp")
+    check_ok "$resp"
+    echo "$resp" | jq '.messages.matches[] | {channel: .channel.name, ts, text: .text, permalink}'
+    ;;
+
+  users|whoami)
+    if [[ "$cmd" == "whoami" ]]; then
+      resp=$(get "auth.test")
+      check_ok "$resp"
+      echo "$resp" | jq '{user, user_id, team, team_id}'
+    else
+      resp=$(get "users.list" --data-urlencode "limit=200")
+      check_ok "$resp"
+      echo "$resp" | jq '.members[] | select(.deleted == false and .is_bot == false) | {id, name, real_name: .profile.real_name}'
+    fi
+    ;;
+
+  dm|open-dm)
+    # slack-api dm <user-id> <text>
+    user="${1:?Usage: slack-api dm <user-id> <text>}"
+    text="${2:?Missing message text}"
+    # Open DM conversation
+    dm_resp=$(post "conversations.open" -d "{\"users\":\"${user}\"}")
+    check_ok "$dm_resp"
+    channel=$(echo "$dm_resp" | jq -r '.channel.id')
+    payload=$(jq -n --arg ch "$channel" --arg tx "$text" '{channel:$ch, text:$tx}')
+    resp=$(post "chat.postMessage" -d "$payload")
+    check_ok "$resp"
+    echo "$resp" | jq '{ok, ts: .ts, channel: .channel}'
+    ;;
+
+  upload)
+    # slack-api upload <channel-id> <file-path> [comment]
+    channel="${1:?Usage: slack-api upload <channel-id> <file-path> [comment]}"
+    filepath="${2:?Missing file path}"
+    comment="${3:-}"
+    resp=$(curl -sf -X POST "${BASE}/files.upload" \
+      -H "Authorization: Bearer ${SLACK_TOKEN}" \
+      -F "channels=${channel}" \
+      -F "file=@${filepath}" \
+      -F "initial_comment=${comment}")
+    check_ok "$resp"
+    echo "$resp" | jq '{ok, file: .file.name, permalink: .file.permalink}'
+    ;;
+
+  *)
+    die "Unknown command: $cmd. Run slack-api help."
+    ;;
+esac
