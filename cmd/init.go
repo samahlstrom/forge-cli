@@ -115,6 +115,11 @@ func runInitGlobal(skills []resolve.SkillInfo) error {
 	wireCodexSkillsGlobal(skills)
 	injectCodexGlobal()
 
+	// Install global-scoped claude-settings hooks (e.g. ponytail-preload's
+	// laziness ladder) into ~/.claude/settings.json, so the discipline fires for
+	// every agent and session — not just inside an initialized repo.
+	installGlobalHooks(claudeDir, enabledHooks())
+
 	return nil
 }
 
