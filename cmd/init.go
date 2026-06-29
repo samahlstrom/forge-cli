@@ -186,8 +186,8 @@ func runInitLocal(skills []resolve.SkillInfo) error {
 
 // ensureAgentsMDLink symlinks ~/.forge/agents.md → ./agents.md if not already present.
 func ensureAgentsMDLink() {
-	globalAgentsMD := filepath.Join(resolve.ForgeHome(), "agents.md")
-	localAgentsMD := "agents.md"
+	globalAgentsMD := resolve.ToolkitManifestPath()
+	localAgentsMD := "agents.md" // local link name; Claude's `@agents.md` import resolves this
 
 	if _, err := os.Stat(globalAgentsMD); err != nil {
 		return // global agents.md doesn't exist yet — forge sync will create it
@@ -250,9 +250,11 @@ func writeForgeSection(path, body, label string) error {
 }
 
 // ensureClaudeMDSectionAt adds or updates a forge section in the given CLAUDE.md
-// file. Claude resolves `@agents.md`, so the section is just that import.
+// file. Claude resolves the `@AGENTS.md` import, so the section is just that
+// import. Uppercase so it resolves on case-sensitive filesystems (Linux/CI),
+// where the toolkit/source file is AGENTS.md.
 func ensureClaudeMDSectionAt(claudeMD string, _ []resolve.SkillInfo) error {
-	return writeForgeSection(claudeMD, "@agents.md", "CLAUDE.md")
+	return writeForgeSection(claudeMD, "@AGENTS.md", "CLAUDE.md")
 }
 
 // codexHome returns Codex's config dir ($CODEX_HOME, else ~/.codex). Empty if
@@ -271,7 +273,7 @@ func codexHome() string {
 // forgeManifestBody returns the toolkit's agents.md content, embedded literally
 // for agents (like Codex) that do NOT resolve `@agents.md` imports.
 func forgeManifestBody() (string, bool) {
-	data, err := os.ReadFile(filepath.Join(resolve.ForgeHome(), "agents.md"))
+	data, err := os.ReadFile(resolve.ToolkitManifestPath())
 	if err != nil {
 		return "", false
 	}

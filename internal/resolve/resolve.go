@@ -31,6 +31,25 @@ func ForgeHome() string {
 	return filepath.Join(home, ".forge")
 }
 
+// ToolkitManifestPath returns the path to the toolkit's agent-instructions
+// manifest inside ForgeHome, preferring the canonical uppercase AGENTS.md and
+// falling back to a legacy lowercase agents.md when only that exists. When
+// neither exists it returns the AGENTS.md path (the canonical name forge sync
+// now writes). Resolving by existence (not a hardcoded literal) keeps the
+// installer correct on case-sensitive filesystems where AGENTS.md and agents.md
+// are distinct files.
+func ToolkitManifestPath() string {
+	upper := filepath.Join(ForgeHome(), "AGENTS.md")
+	if fileExists(upper) {
+		return upper
+	}
+	lower := filepath.Join(ForgeHome(), "agents.md")
+	if fileExists(lower) {
+		return lower
+	}
+	return upper
+}
+
 // IsSetup returns true if ~/.forge/ has been initialized.
 func IsSetup() bool {
 	info, err := os.Stat(AgentsDir())
