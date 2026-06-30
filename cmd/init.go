@@ -77,6 +77,10 @@ func runInit(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	// Refresh the auto-generated skills list in the toolkit AGENTS.md first, so
+	// the regenerated manifest flows into every embed/import below.
+	regenerateToolkitSkills()
+
 	if globalFlag {
 		return runInitGlobal(skills)
 	}
