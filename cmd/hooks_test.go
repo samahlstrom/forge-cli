@@ -455,3 +455,108 @@ func TestInstallRepoHooksInstallsNoScopeGitHook(t *testing.T) {
 		t.Fatalf("no-scope git-hook must still install per-repo (git hooks are per-repo by nature): %v", err)
 	}
 }
+
+// ---- install-local-hook (settings.local.json target) ----
+
+const localHookManifest = `{"hooks":[
+  {"name":"validate-gate","kind":"claude-settings-hook","event":"PreToolUse","matcher":"Bash","script":"validate-gate.sh","scope":"repo","default":false},
+  {"name":"pre-push-validate","kind":"git-hook","gitHook":"pre-push","script":"pre-push-validate.sh","scope":"repo","default":true}
+]}`
+
+func TestInstallLocalHookWritesLocalNotCommitted(t *testing.T) {
+	repo := setupToolkitWithManifest(t, localHookManifest)
+
+	if err := installLocalHook(repo, "validate-gate"); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	// Writes the gitignored LOCAL file...
+	localPath := filepath.Join(repo, ".claude", "settings.local.json")
+	got := preToolUseCommands(t, readJSON(t, localPath), "Bash")
+	if len(got) != 1 || !strings.HasSuffix(got[0], filepath.Join("hooks", "validate-gate.sh")) {
+		t.Fatalf("local hook should point at toolkit gate, got %v", got)
+	}
+	// ...and NEVER the committed settings.json.
+	if _, err := os.Stat(filepath.Join(repo, ".claude", "settings.json")); err == nil {
+		t.Fatalf("committed settings.json must be untouched by a local install")
+	}
+}
+
+func TestInstallLocalHookPreservesExistingKeys(t *testing.T) {
+	repo := setupToolkitWithManifest(t, localHookManifest)
+	localPath := filepath.Join(repo, ".claude", "settings.local.json")
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := `{
+  "permissions": {"allow": ["Read"]},
+  "hooks": {"PreToolUse": [{"matcher": "Edit", "hooks": [{"type":"command","command":"/keep/me.sh"}]}]}
+}`
+	if err := os.WriteFile(localPath, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := installLocalHook(repo, "validate-gate"); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	settings := readJSON(t, localPath)
+	if _, ok := settings["permissions"]; !ok {
+		t.Fatalf("permissions lost after local merge")
+	}
+	if edit := preToolUseCommands(t, settings, "Edit"); len(edit) != 1 || edit[0] != "/keep/me.sh" {
+		t.Fatalf("existing Edit matcher clobbered, got %v", edit)
+	}
+	if bash := preToolUseCommands(t, settings, "Bash"); len(bash) != 1 {
+		t.Fatalf("our Bash matcher not appended, got %v", bash)
+	}
+}
+
+func TestInstallLocalHookIdempotent(t *testing.T) {
+	repo := setupToolkitWithManifest(t, localHookManifest)
+	for i := 0; i < 3; i++ {
+		if err := installLocalHook(repo, "validate-gate"); err != nil {
+			t.Fatalf("install %d: %v", i, err)
+		}
+	}
+	localPath := filepath.Join(repo, ".claude", "settings.local.json")
+	if got := preToolUseCommands(t, readJSON(t, localPath), "Bash"); len(got) != 1 {
+		t.Fatalf("expected exactly 1 command after 3 installs (no dup), got %d: %v", len(got), got)
+	}
+}
+
+func TestInstallLocalHookUnknownName(t *testing.T) {
+	repo := setupToolkitWithManifest(t, localHookManifest)
+	if err := installLocalHook(repo, "nope"); err == nil {
+		t.Fatalf("expected error for a hook name absent from the manifest")
+	}
+}
+
+func TestInstallLocalHookRejectsNonSettingsKind(t *testing.T) {
+	repo := setupToolkitWithManifest(t, localHookManifest)
+	// pre-push-validate is a git-hook, not a claude-settings-hook.
+	if err := installLocalHook(repo, "pre-push-validate"); err == nil {
+		t.Fatalf("expected error: only claude-settings-hook installs into settings.local.json")
+	}
+}
+
+func TestIsGitIgnored(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	// Disable any machine-global excludes (e.g. ~/.config/git/ignore) so the test
+	// is hermetic — only the repo's own .gitignore should decide the result here.
+	if out, err := exec.Command("git", "-C", dir, "config", "core.excludesFile", "/dev/null").CombinedOutput(); err != nil {
+		t.Fatalf("disable global excludes: %v\n%s", err, out)
+	}
+	rel := filepath.Join(".claude", "settings.local.json")
+
+	if isGitIgnored(dir, rel) {
+		t.Fatalf("path must not be reported ignored before a .gitignore rule exists")
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(".claude/settings.local.json\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !isGitIgnored(dir, rel) {
+		t.Fatalf("path must be reported ignored once .gitignore covers it")
+	}
+}
