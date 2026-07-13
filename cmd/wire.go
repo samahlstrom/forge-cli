@@ -238,7 +238,7 @@ func wireAllSkillsGlobal() {
 	}
 
 	// Keep Codex's skill directory in sync too (~/.codex/skills/).
-	wireCodexSkillsGlobal(skills)
+	wireCodexSkillsGlobal(skills, false)
 }
 
 // updateSkillsGitignore scans .claude/skills/ for symlinked entries and writes

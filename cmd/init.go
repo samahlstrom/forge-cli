@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/samahlstrom/forge-cli/internal/resolve"
 	"github.com/samahlstrom/forge-cli/internal/ui"
@@ -116,7 +117,7 @@ func runInitGlobal(skills []resolve.SkillInfo) error {
 
 	// Wire skills into ~/.codex/skills/ so Codex auto-discovers them, and inject
 	// the literal manifest into Codex's global AGENTS.md as an index.
-	wireCodexSkillsGlobal(skills)
+	wireCodexSkillsGlobal(skills, forceFlag)
 	injectCodexGlobal()
 
 	// Install global-scoped claude-settings hooks (e.g. ponytail-preload's
@@ -340,7 +341,7 @@ func injectCodexGlobal() {
 // copies (matching Codex's own skill-installer). No-op if Codex isn't installed.
 // The AGENTS.md manifest (injectCodexGlobal) is just an index; this is what makes
 // the skills actually loadable.
-func wireCodexSkillsGlobal(skills []resolve.SkillInfo) {
+func wireCodexSkillsGlobal(skills []resolve.SkillInfo, force bool) {
 	ch := codexHome()
 	if ch == "" {
 		return
@@ -358,10 +359,16 @@ func wireCodexSkillsGlobal(skills []resolve.SkillInfo) {
 	for _, s := range skills {
 		wanted[s.Name] = true
 		dst := filepath.Join(skillsDir, s.Name)
-		// Don't clobber a user-authored skill of the same name (no marker).
 		if _, err := os.Stat(dst); err == nil {
 			if _, mErr := os.Stat(filepath.Join(dst, forgeManagedMarker)); mErr != nil {
-				continue
+				if !force && !looksLikeLegacyCodexSkill(dst, s.Name) {
+					// Don't clobber a user-authored skill of the same name.
+					continue
+				}
+				if err := archiveCodexSkillDir(dst); err != nil {
+					ui.Log.Warn(fmt.Sprintf("Could not preserve existing Codex skill %s: %v", s.Name, err))
+					continue
+				}
 			}
 		}
 		if err := copySkillDir(filepath.Dir(s.Path), dst); err != nil {
@@ -374,6 +381,108 @@ func wireCodexSkillsGlobal(skills []resolve.SkillInfo) {
 	if copied > 0 {
 		ui.Log.Success(fmt.Sprintf("Copied %d skill(s) into ~/.codex/skills/", copied))
 	}
+}
+
+func looksLikeLegacyCodexSkill(dir, name string) bool {
+	data, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+	if err != nil {
+		return false
+	}
+	got, ok := codexSkillFrontmatterName(string(data))
+	return ok && got == name
+}
+
+func codexSkillFrontmatterName(content string) (string, bool) {
+	if !strings.HasPrefix(content, "---") {
+		return "", false
+	}
+	body := content[3:]
+	if i := strings.Index(body, "\n---"); i >= 0 {
+		body = body[:i]
+	}
+	for _, ln := range strings.Split(body, "\n") {
+		ln = strings.TrimSpace(ln)
+		if strings.HasPrefix(ln, "name:") {
+			return trimYAMLQuotes(strings.TrimSpace(ln[len("name:"):])), true
+		}
+	}
+	return "", false
+}
+
+func trimYAMLQuotes(s string) string {
+	if len(s) >= 2 {
+		if q := s[0]; (q == '"' || q == '\'') && s[len(s)-1] == q {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
+}
+
+func archiveCodexSkillDir(dst string) error {
+	parent := filepath.Dir(dst)
+	base := filepath.Base(dst)
+	stamp := time.Now().UTC().Format("20060102150405")
+	for i := 0; i < 100; i++ {
+		name := base + ".stale." + stamp
+		if i > 0 {
+			name = fmt.Sprintf("%s.%d", name, i)
+		}
+		archive := filepath.Join(parent, name)
+		if _, err := os.Lstat(archive); os.IsNotExist(err) {
+			return os.Rename(dst, archive)
+		}
+	}
+	return fmt.Errorf("could not choose archive name for %s", dst)
+}
+
+func normalizeCodexSkillFrontmatter(data []byte, source string) []byte {
+	content := string(data)
+	if !strings.HasPrefix(content, "---\n") {
+		return data
+	}
+	rest := content[len("---\n"):]
+	end := strings.Index(rest, "\n---")
+	if end < 0 {
+		return data
+	}
+	frontmatter := rest[:end]
+	lines := strings.Split(frontmatter, "\n")
+	changed := []int{}
+	for i, line := range lines {
+		normalized := normalizeCodexFrontmatterLine(line)
+		if normalized != line {
+			lines[i] = normalized
+			changed = append(changed, i+2)
+		}
+	}
+	if len(changed) == 0 {
+		return data
+	}
+	ui.Log.Warn(fmt.Sprintf("Normalized Codex YAML frontmatter in %s (lines %v)", source, changed))
+	return []byte("---\n" + strings.Join(lines, "\n") + rest[end:])
+}
+
+func normalizeCodexFrontmatterLine(line string) string {
+	idx := strings.Index(line, ":")
+	if idx < 0 {
+		return line
+	}
+	key := strings.TrimSpace(line[:idx])
+	value := strings.TrimSpace(line[idx+1:])
+	if key == "" || value == "" || !strings.Contains(value, ": ") || isYAMLQuoted(value) {
+		return line
+	}
+	return line[:idx+1] + " " + yamlDoubleQuote(value)
+}
+
+func isYAMLQuoted(s string) bool {
+	return len(s) >= 2 && (s[0] == '"' || s[0] == '\'')
+}
+
+func yamlDoubleQuote(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return `"` + s + `"`
 }
 
 // copySkillDir recursively copies a skill source directory to dst as real files,
@@ -397,6 +506,9 @@ func copySkillDir(src, dst string) error {
 		data, err := os.ReadFile(p) // resolves symlinked source files to real content
 		if err != nil {
 			return err
+		}
+		if rel == "SKILL.md" {
+			data = normalizeCodexSkillFrontmatter(data, p)
 		}
 		return os.WriteFile(target, data, 0o644)
 	})

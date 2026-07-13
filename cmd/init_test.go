@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -165,7 +166,7 @@ func TestWireCodexSkillsGlobal(t *testing.T) {
 	// symlinks), with a forge-managed marker.
 	codex := t.TempDir()
 	t.Setenv("CODEX_HOME", codex)
-	wireCodexSkillsGlobal(skills)
+	wireCodexSkillsGlobal(skills, false)
 	copied := filepath.Join(codex, "skills", "validate", "SKILL.md")
 	info, err := os.Lstat(copied)
 	if err != nil {
@@ -189,7 +190,7 @@ func TestWireCodexSkillsGlobal(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(userSkill, "SKILL.md"), []byte("keep me"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	wireCodexSkillsGlobal([]resolve.SkillInfo{{Name: "mine", Path: skillFile}})
+	wireCodexSkillsGlobal([]resolve.SkillInfo{{Name: "mine", Path: skillFile}}, false)
 	if got := readFile(t, filepath.Join(userSkill, "SKILL.md")); got != "keep me" {
 		t.Fatalf("clobbered a user-authored skill: %q", got)
 	}
@@ -197,9 +198,199 @@ func TestWireCodexSkillsGlobal(t *testing.T) {
 	// Codex not installed (config dir absent) → no-op, no skills dir created.
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
 	t.Setenv("CODEX_HOME", missing)
-	wireCodexSkillsGlobal(skills)
+	wireCodexSkillsGlobal(skills, false)
 	if _, err := os.Stat(filepath.Join(missing, "skills")); !os.IsNotExist(err) {
 		t.Fatalf("should not create skills dir when Codex isn't installed")
+	}
+}
+
+func TestWireCodexSkillsGlobalRefreshesLegacyUnmarkedCopy(t *testing.T) {
+	toolkit := t.TempDir()
+	skillDir := filepath.Join(toolkit, "validate")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillFile := filepath.Join(skillDir, "SKILL.md")
+	current := "---\nname: validate\n---\ncurrent reporter-view parity\n"
+	if err := os.WriteFile(skillFile, []byte(current), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	codex := t.TempDir()
+	t.Setenv("CODEX_HOME", codex)
+	legacy := filepath.Join(codex, "skills", "validate")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := "---\nname: validate\n---\nstale reporter flow\n"
+	if err := os.WriteFile(filepath.Join(legacy, "SKILL.md"), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	wireCodexSkillsGlobal([]resolve.SkillInfo{{Name: "validate", Path: skillFile}}, false)
+
+	if got := readFile(t, filepath.Join(legacy, "SKILL.md")); got != current {
+		t.Fatalf("legacy unmarked Codex copy was not refreshed:\n%s", got)
+	}
+	if _, err := os.Stat(filepath.Join(legacy, forgeManagedMarker)); err != nil {
+		t.Fatalf("refreshed legacy copy should be marked forge-managed: %v", err)
+	}
+	archives, err := filepath.Glob(filepath.Join(codex, "skills", "validate.stale.*", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(archives) != 1 {
+		t.Fatalf("expected one archived stale copy, got %d (%v)", len(archives), archives)
+	}
+	if got := readFile(t, archives[0]); got != old {
+		t.Fatalf("archived stale copy content changed:\n%s", got)
+	}
+}
+
+func TestWireCodexSkillsGlobalNormalizesCopiedFrontmatter(t *testing.T) {
+	toolkit := t.TempDir()
+	skillDir := filepath.Join(toolkit, "agent-browser")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillFile := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(skillFile, []byte("---\nname: agent-browser\nsummary: browser work: headless only\n---\n# Body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	codex := t.TempDir()
+	t.Setenv("CODEX_HOME", codex)
+	wireCodexSkillsGlobal([]resolve.SkillInfo{{Name: "agent-browser", Path: skillFile}}, false)
+
+	got := readFile(t, filepath.Join(codex, "skills", "agent-browser", "SKILL.md"))
+	if !strings.Contains(got, "summary: \"browser work: headless only\"") {
+		t.Fatalf("Codex copy should quote colon-containing frontmatter scalars:\n%s", got)
+	}
+	if !strings.Contains(got, "# Body") {
+		t.Fatalf("Codex frontmatter normalization dropped body:\n%s", got)
+	}
+}
+
+func TestRunInitGlobalForceRefreshesUnmarkedCodexCopy(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	forge := t.TempDir()
+	t.Setenv("FORGE_HOME", forge)
+	codex := filepath.Join(home, ".codex")
+	t.Setenv("CODEX_HOME", codex)
+	if err := os.MkdirAll(codex, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(forge, "AGENTS.md"), []byte("# Forge Toolkit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	skillDir := filepath.Join(forge, "skills", "validate")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(forge, "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillFile := filepath.Join(skillDir, "SKILL.md")
+	current := "---\nname: validate\n---\ncurrent\n"
+	if err := os.WriteFile(skillFile, []byte(current), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	userCopy := filepath.Join(codex, "skills", "validate")
+	if err := os.MkdirAll(userCopy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(userCopy, "SKILL.md"), []byte("personal override\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldForce := forceFlag
+	forceFlag = true
+	t.Cleanup(func() { forceFlag = oldForce })
+	if err := runInitGlobal([]resolve.SkillInfo{{Name: "validate", Path: skillFile}}); err != nil {
+		t.Fatalf("runInitGlobal: %v", err)
+	}
+
+	if got := readFile(t, filepath.Join(userCopy, "SKILL.md")); got != current {
+		t.Fatalf("forge init -g --force did not refresh Codex copy:\n%s", got)
+	}
+	if dest, err := os.Readlink(filepath.Join(home, ".claude", "skills", "validate", "SKILL.md")); err != nil || dest != skillFile {
+		t.Fatalf("global Claude skill link = %q, %v; want %q", dest, err, skillFile)
+	}
+}
+
+func TestRunSyncRefreshesLegacyUnmarkedCodexCopy(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	codex := filepath.Join(home, ".codex")
+	t.Setenv("CODEX_HOME", codex)
+	if err := os.MkdirAll(filepath.Join(home, ".claude", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(codex, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	forge := setupForgeGitRepo(t)
+	t.Setenv("FORGE_HOME", forge)
+	skillDir := filepath.Join(forge, "skills", "validate")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(forge, "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillFile := filepath.Join(skillDir, "SKILL.md")
+	current := "---\nname: validate\n---\ncurrent from sync\n"
+	if err := os.WriteFile(skillFile, []byte(current), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(forge, "AGENTS.md"), []byte("# Forge Toolkit\n\n## Skills\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, forge, "add", "-A")
+	gitCmd(t, forge, "commit", "-m", "add validate")
+	gitCmd(t, forge, "push", "-u", "origin", "main")
+
+	legacy := filepath.Join(codex, "skills", "validate")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, "SKILL.md"), []byte("---\nname: validate\n---\nstale\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runSync(nil, nil); err != nil {
+		t.Fatalf("runSync: %v", err)
+	}
+
+	if got := readFile(t, filepath.Join(legacy, "SKILL.md")); got != current {
+		t.Fatalf("forge sync did not refresh legacy Codex copy:\n%s", got)
+	}
+}
+
+func setupForgeGitRepo(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	if out, err := exec.Command("git", "init", "--bare", remote).CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %v\n%s", err, out)
+	}
+	forge := filepath.Join(root, "forge")
+	if out, err := exec.Command("git", "clone", remote, forge).CombinedOutput(); err != nil {
+		t.Fatalf("git clone: %v\n%s", err, out)
+	}
+	gitCmd(t, forge, "config", "user.email", "test@example.com")
+	gitCmd(t, forge, "config", "user.name", "Test User")
+	gitCmd(t, forge, "checkout", "-b", "main")
+	return forge
+}
+
+func gitCmd(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git -C %s %s: %v\n%s", dir, strings.Join(args, " "), err, out)
 	}
 }
 
