@@ -15,7 +15,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var skillBody string
+var (
+	skillBody string
+	skillFile string
+)
 
 func init() {
 	skillCmd := &cobra.Command{
@@ -50,6 +53,7 @@ func init() {
 		RunE:  runSkillAdd,
 	}
 	addCmd.Flags().StringVar(&skillBody, "body", "", "Full markdown body for the skill")
+	addCmd.Flags().StringVar(&skillFile, "file", "", "Upload an existing SKILL.md file or skill directory")
 	skillCmd.AddCommand(addCmd)
 
 	skillCmd.AddCommand(&cobra.Command{
@@ -117,34 +121,54 @@ func runSkillAdd(_ *cobra.Command, args []string) error {
 	}
 
 	skillDir := filepath.Join(resolve.SkillsDir(), name)
-	skillFile := filepath.Join(skillDir, "SKILL.md")
+	skillMD := filepath.Join(skillDir, "SKILL.md")
 
-	if util.Exists(skillFile) {
+	if util.Exists(skillMD) {
 		return fmt.Errorf("skill %q already exists — use 'forge skill edit %s' instead", name, name)
 	}
 
-	content := skillBody
-	if content == "" {
-		content = scaffoldSkill(name)
+	// --file uploads an existing skill (a whole dir, or a single SKILL.md);
+	// otherwise --body or a scaffold seeds a new one.
+	if skillFile != "" {
+		if err := uploadSkill(skillFile, skillDir); err != nil {
+			return err
+		}
+		ui.Log.Success(fmt.Sprintf("Added skill: %s", name))
+	} else {
+		content := skillBody
+		if content == "" {
+			content = scaffoldSkill(name)
+		}
+		if err := util.WriteText(skillMD, content); err != nil {
+			return fmt.Errorf("failed to write skill: %w", err)
+		}
+		ui.Log.Success(fmt.Sprintf("Created %s", skillMD))
 	}
-
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create %s: %w", skillDir, err)
-	}
-
-	if err := util.WriteText(skillFile, content); err != nil {
-		return fmt.Errorf("failed to write skill: %w", err)
-	}
-
-	ui.Log.Success(fmt.Sprintf("Created %s", skillFile))
 
 	commitAndPush(
-		filepath.Join("skills", name, "SKILL.md"),
+		filepath.Join("skills", name),
 		fmt.Sprintf("feat: add %s skill", name),
 	)
 
 	wireSkill(name)
 	return nil
+}
+
+// uploadSkill copies an existing skill into the toolkit. src may be a skill
+// directory (must contain SKILL.md; copied whole, preserving exec bits) or a
+// single SKILL.md file.
+func uploadSkill(src, skillDir string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("file not found: %s", src)
+	}
+	if info.IsDir() {
+		if !util.Exists(filepath.Join(src, "SKILL.md")) {
+			return fmt.Errorf("%s has no SKILL.md — not a skill directory", src)
+		}
+		return util.CopyTree(src, skillDir)
+	}
+	return util.CopyFile(src, filepath.Join(skillDir, "SKILL.md"), 0)
 }
 
 func runSkillRemove(_ *cobra.Command, args []string) error {
