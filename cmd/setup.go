@@ -3,6 +3,7 @@ package cmd
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -24,10 +25,11 @@ const toolkitRepoName = "forge-toolkit"
 func init() {
 	cmd := &cobra.Command{
 		Use:   "setup",
-		Short: "Create your personal toolkit at ~/.forge/",
-		Long: `Creates a new toolkit at ~/.forge/ with starter agents, skills,
-and pipeline scripts. The toolkit is a local git repository backed
-by a private GitHub repo (forge-toolkit) for cross-machine sync.
+		Short: "Provision browser runtimes and create your toolkit at ~/.forge/",
+		Long: `Provision and verify the headless agent-browser runtime, then create
+a toolkit at ~/.forge/ with starter agents, skills, and pipeline scripts. The
+toolkit is a local git repository backed by a private GitHub repo
+(forge-toolkit) for cross-machine sync.
 
 First time:
   forge setup
@@ -39,7 +41,25 @@ On another machine (same GitHub account):
 	rootCmd.AddCommand(cmd)
 }
 
-func runSetup(_ *cobra.Command, _ []string) error {
+func runSetup(cmd *cobra.Command, args []string) error {
+	return runSetupWithBrowserDeps(cmd, args, newBrowserRuntimeDeps())
+}
+
+func runSetupWithBrowserDeps(cmd *cobra.Command, args []string, deps browserRuntimeDeps) error {
+	if err := ensureBrowserRuntime(cmd.Context(), deps); err != nil {
+		if errors.Is(err, errLightpandaNeedsWSL) {
+			ui.Log.Warn(err.Error())
+			ui.Log.Info("Toolkit setup will continue; activate browser work by running 'forge setup' inside WSL2.")
+		} else {
+			return fmt.Errorf("browser runtime setup: %w", err)
+		}
+	} else {
+		ui.Log.Success("Browser runtime ready (Lightpanda + isolated Chrome fallback).")
+	}
+	return runToolkitSetup(cmd, args)
+}
+
+func runToolkitSetup(_ *cobra.Command, _ []string) error {
 	home := resolve.ForgeHome()
 
 	// If toolkit already exists, just ensure remote is wired
