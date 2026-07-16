@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -533,12 +534,19 @@ func closeAndVerifySession(ctx context.Context, deps browserRuntimeDeps, dir, co
 	if _, err := runBrowser(ctx, deps, dir, "agent-browser", sessionArgs(config, engine, session, "close")...); err != nil {
 		return fmt.Errorf("close exact session %s: %w", session, err)
 	}
-	list, err := runBrowser(ctx, deps, dir, "agent-browser", agentArgs(config, "--json", "session", "list")...)
-	if err != nil {
-		return fmt.Errorf("list sessions after closing %s: %w", session, err)
-	}
-	if sessionListed(list, session) {
-		return fmt.Errorf("session %s remains in session list after exact close", session)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		list, err := runBrowser(ctx, deps, dir, "agent-browser", agentArgs(config, "--json", "session", "list")...)
+		if err != nil {
+			return fmt.Errorf("list sessions after closing %s: %w", session, err)
+		}
+		if !sessionListed(list, session) {
+			break
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("session %s remains in session list after exact close", session)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 	processes, err := listBrowserProcesses(ctx, deps, dir)
 	if err != nil {

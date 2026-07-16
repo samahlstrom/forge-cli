@@ -43,6 +43,7 @@ type fakeBrowserRuntime struct {
 	lightArch                 string
 	lightpandaInstallPathOnly bool
 	chromeReady               bool
+	staleSessionListQueries   int
 	fail                      map[string]error
 }
 
@@ -241,6 +242,15 @@ func (f *fakeBrowserRuntime) runAgentBrowser(command browserCommand) ([]byte, er
 				sessions = append(sessions, map[string]any{"name": name, "engine": s.engine})
 			}
 		}
+		if f.staleSessionListQueries > 0 {
+			f.staleSessionListQueries--
+			for name, s := range f.sessions {
+				if !s.active {
+					sessions = append(sessions, map[string]any{"name": name, "engine": s.engine})
+					break
+				}
+			}
+		}
 		return json.Marshal(map[string]any{"success": true, "data": map[string]any{"sessions": sessions}})
 	}
 	if hasArg(args, "open") {
@@ -428,6 +438,14 @@ func TestBrowserProvisioningDoesNotQuerySessionInfoAfterExactClose(t *testing.T)
 		if closed[session] && hasSequence(command.Args, "session", "info") {
 			t.Fatalf("queried session info after exact close for %q: %+v", session, command)
 		}
+	}
+}
+
+func TestBrowserProvisioningWaitsForExactSessionListRemoval(t *testing.T) {
+	fake := newFakeBrowserRuntime(browserPlatform{OS: "darwin", Arch: "arm64"})
+	fake.staleSessionListQueries = 1
+	if err := ensureBrowserRuntime(context.Background(), fake.deps()); err != nil {
+		t.Fatal(err)
 	}
 }
 
