@@ -36,13 +36,14 @@ type fakeBrowserRuntime struct {
 	removed  []string
 	nextID   int
 
-	agentVersion string
-	agentCaps    bool
-	agentOwner   string
-	lightVersion string
-	lightArch    string
-	chromeReady  bool
-	fail         map[string]error
+	agentVersion              string
+	agentCaps                 bool
+	agentOwner                string
+	lightVersion              string
+	lightArch                 string
+	lightpandaInstallPathOnly bool
+	chromeReady               bool
+	fail                      map[string]error
 }
 
 func newFakeBrowserRuntime(platform browserPlatform) *fakeBrowserRuntime {
@@ -91,7 +92,11 @@ func (f *fakeBrowserRuntime) deps() browserRuntimeDeps {
 			return path, nil
 		},
 		binaryArch: func(path, goos string) (string, error) {
-			if path != f.paths["lightpanda"] {
+			expected := f.paths["lightpanda"]
+			if f.lightpandaInstallPathOnly {
+				expected = filepath.Join(f.home, ".local", "bin", "lightpanda")
+			}
+			if path != expected {
 				return "", fmt.Errorf("unexpected binary: %s", path)
 			}
 			return f.lightArch, nil
@@ -157,7 +162,9 @@ func (f *fakeBrowserRuntime) run(_ context.Context, command browserCommand) ([]b
 	case "curl":
 		return []byte("installer"), nil
 	case "bash":
-		f.paths["lightpanda"] = filepath.Join(f.home, ".local", "bin", "lightpanda")
+		if !f.lightpandaInstallPathOnly {
+			f.paths["lightpanda"] = filepath.Join(f.home, ".local", "bin", "lightpanda")
+		}
 		f.lightVersion = "0.3.4"
 		f.lightArch = f.platform.Arch
 		return []byte("Lightpanda installed successfully"), nil
@@ -237,7 +244,8 @@ func (f *fakeBrowserRuntime) runAgentBrowser(command browserCommand) ([]byte, er
 		return json.Marshal(map[string]any{"success": true, "data": map[string]any{"sessions": sessions}})
 	}
 	if hasArg(args, "open") {
-		if engine == "lightpanda" && f.paths["lightpanda"] == "" {
+		installedLightpanda := strings.Contains(envValue(command.Env, "PATH"), filepath.Join(f.home, ".local", "bin"))
+		if engine == "lightpanda" && f.paths["lightpanda"] == "" && !installedLightpanda {
 			return nil, errors.New("lightpanda executable not found")
 		}
 		if engine == "chrome" && !f.chromeReady {
@@ -540,6 +548,21 @@ func TestEnsureBrowserRuntimeInstallsVerifiedLightpanda(t *testing.T) {
 				t.Fatalf("official verified installer not used: %+v", fake.commands)
 			}
 		})
+	}
+}
+
+func TestEnsureBrowserRuntimeUsesOfficialLightpandaPathBeforeParentPathChanges(t *testing.T) {
+	fake := newFakeBrowserRuntime(browserPlatform{OS: "darwin", Arch: "arm64"})
+	delete(fake.paths, "lightpanda")
+	fake.lightpandaInstallPathOnly = true
+	if err := ensureBrowserRuntime(context.Background(), fake.deps()); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(fake.home, ".local", "bin")
+	for _, command := range fake.commands {
+		if command.Name == "lightpanda" && !strings.Contains(envValue(command.Env, "PATH"), want) {
+			t.Fatalf("installed Lightpanda was not made available to verification: %+v", command)
+		}
 	}
 }
 

@@ -179,7 +179,7 @@ func ensureBrowserRuntime(ctx context.Context, deps browserRuntimeDeps) error {
 	if err := ensureAgentBrowser(ctx, deps, tmp, config); err != nil {
 		return err
 	}
-	if err := ensureLightpanda(ctx, deps, tmp); err != nil {
+	if err := ensureLightpanda(ctx, &deps, tmp); err != nil {
 		return err
 	}
 	if err := smokeLightpanda(ctx, deps, tmp, config); err != nil {
@@ -360,16 +360,15 @@ func npmPrefixForExecutable(deps browserRuntimeDeps, path string) string {
 	return filepath.FromSlash(normalized[:index])
 }
 
-func ensureLightpanda(ctx context.Context, deps browserRuntimeDeps, dir string) error {
+func ensureLightpanda(ctx context.Context, deps *browserRuntimeDeps, dir string) error {
 	path, err := deps.lookPath("lightpanda")
 	if err != nil {
-		if err := installLightpanda(ctx, deps, dir); err != nil {
+		if err := installLightpanda(ctx, *deps, dir); err != nil {
 			return fmt.Errorf("install Lightpanda %s: %w", lightpandaVersion, err)
 		}
-		path, err = deps.lookPath("lightpanda")
-		if err != nil {
-			return fmt.Errorf("Lightpanda installed into %s but does not resolve on PATH; add that directory to PATH and rerun forge setup", filepath.Join(deps.homeDir, ".local", "bin"))
-		}
+		installDir := filepath.Join(deps.homeDir, ".local", "bin")
+		path = filepath.Join(installDir, "lightpanda")
+		deps.pathEnv = installDir + string(os.PathListSeparator) + deps.pathEnv
 	}
 	arch, err := deps.binaryArch(path, deps.platform.OS)
 	if err != nil {
@@ -378,7 +377,7 @@ func ensureLightpanda(ctx context.Context, deps browserRuntimeDeps, dir string) 
 	if arch != deps.platform.Arch {
 		return fmt.Errorf("Lightpanda binary architecture %s does not match host %s; refusing to run a wrong-platform artifact at %s", arch, deps.platform.Arch, path)
 	}
-	out, err := runBrowser(ctx, deps, dir, "lightpanda", "version")
+	out, err := runBrowser(ctx, *deps, dir, "lightpanda", "version")
 	if err != nil {
 		return fmt.Errorf("run lightpanda version: %w", err)
 	}
@@ -693,12 +692,13 @@ func browserCommandEnv(deps browserRuntimeDeps, socketDir string, extra []string
 		if index := strings.IndexByte(item, '='); index >= 0 {
 			name = item[:index]
 		}
-		if strings.HasPrefix(name, "AGENT_BROWSER_") || name == "CI" || strings.HasPrefix(name, "NPM_CONFIG_") || name == "HOMEBREW_NO_AUTO_UPDATE" {
+		if strings.HasPrefix(name, "AGENT_BROWSER_") || name == "CI" || name == "PATH" || strings.HasPrefix(name, "NPM_CONFIG_") || name == "HOMEBREW_NO_AUTO_UPDATE" {
 			continue
 		}
 		env = append(env, item)
 	}
 	env = append(env,
+		"PATH="+deps.pathEnv,
 		"CI=1",
 		"AGENT_BROWSER_HEADED=false",
 		"AGENT_BROWSER_AUTO_CONNECT=false",
