@@ -11,6 +11,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -417,6 +418,33 @@ func TestBrowserProvisioningDoesNotQuerySessionInfoAfterExactClose(t *testing.T)
 		if closed[session] && hasSequence(command.Args, "session", "info") {
 			t.Fatalf("queried session info after exact close for %q: %+v", session, command)
 		}
+	}
+}
+
+func TestBrowserSmokeUsesCanonicalNamedSessions(t *testing.T) {
+	fake := newFakeBrowserRuntime(browserPlatform{OS: "darwin", Arch: "arm64"})
+	if err := ensureBrowserRuntime(context.Background(), fake.deps()); err != nil {
+		t.Fatal(err)
+	}
+	canonical := regexp.MustCompile(`^forge-[a-z0-9][a-z0-9-]{0,23}-[0-9a-f]{8}-(dom|capture)-[0-9a-f]{16}$`)
+	sessions := map[string]string{}
+	for _, command := range fake.commands {
+		if command.Name != "agent-browser" || !hasArg(command.Args, "--session") {
+			continue
+		}
+		session := argValue(command.Args, "--session")
+		if !canonical.MatchString(session) {
+			t.Fatalf("non-canonical smoke session %q in %+v", session, command)
+		}
+		if engine := argValue(command.Args, "--engine"); engine != "" {
+			if prior, exists := sessions[engine]; exists && prior != session {
+				t.Fatalf("%s smoke split its owned session: %q then %q", engine, prior, session)
+			}
+			sessions[engine] = session
+		}
+	}
+	if sessions["lightpanda"] == "" || sessions["chrome"] == "" || sessions["lightpanda"] == sessions["chrome"] {
+		t.Fatalf("smokes must use distinct Lightpanda and Chrome sessions: %#v", sessions)
 	}
 }
 

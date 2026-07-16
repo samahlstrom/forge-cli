@@ -3,8 +3,11 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"debug/elf"
 	"debug/macho"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -412,7 +415,7 @@ func pathContains(pathEnv, want string) bool {
 }
 
 func smokeLightpanda(ctx context.Context, deps browserRuntimeDeps, dir, config string) (err error) {
-	session, err := createSmokeSession(ctx, deps, dir, config, "forge-lightpanda-smoke")
+	session, err := createSmokeSession(dir, "dom")
 	if err != nil {
 		return err
 	}
@@ -443,7 +446,7 @@ func smokeLightpanda(ctx context.Context, deps browserRuntimeDeps, dir, config s
 }
 
 func smokeChrome(ctx context.Context, deps browserRuntimeDeps, dir, config, attempt string) (err error) {
-	session, err := createSmokeSession(ctx, deps, dir, config, "forge-chrome-smoke-"+attempt)
+	session, err := createSmokeSession(dir, "capture")
 	if err != nil {
 		return err
 	}
@@ -481,16 +484,16 @@ func smokeChrome(ctx context.Context, deps browserRuntimeDeps, dir, config, atte
 	return nil
 }
 
-func createSmokeSession(ctx context.Context, deps browserRuntimeDeps, dir, config, prefix string) (string, error) {
-	out, err := runBrowser(ctx, deps, dir, "agent-browser", agentArgs(config, "session", "id", "--scope", "cwd", "--prefix", prefix)...)
-	if err != nil {
-		return "", fmt.Errorf("create isolated session: %w", err)
+func createSmokeSession(dir, purpose string) (string, error) {
+	if purpose != "dom" && purpose != "capture" {
+		return "", fmt.Errorf("invalid browser smoke session purpose %q", purpose)
 	}
-	session := strings.TrimSpace(string(out))
-	if session == "" || session == "default" {
-		return "", fmt.Errorf("agent-browser returned unsafe session id %q", session)
+	worktree := sha256.Sum256([]byte(filepath.Clean(dir)))
+	nonce := make([]byte, 8)
+	if _, err := rand.Read(nonce); err != nil {
+		return "", fmt.Errorf("generate browser smoke session nonce: %w", err)
 	}
-	return session, nil
+	return "forge-fc-cvt-" + hex.EncodeToString(worktree[:4]) + "-" + purpose + "-" + hex.EncodeToString(nonce), nil
 }
 
 func inspectActiveSession(ctx context.Context, deps browserRuntimeDeps, dir, config, engine, session string) ([]int, error) {
