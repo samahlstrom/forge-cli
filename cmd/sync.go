@@ -62,6 +62,9 @@ func runSync(_ *cobra.Command, _ []string) error {
 	// skills so the manifest never drifts, before it's re-embedded for Codex.
 	regenerateToolkitSkills()
 
+	// Keep both backends on identical instructions (portable import, not a symlink).
+	ensureToolkitClaudeMDImport()
+
 	// Refresh Codex AGENTS.md manifests. Codex doesn't resolve @agents.md, so its
 	// copy is literal content and must be re-synced (Claude's @import is live).
 	injectCodexGlobal()

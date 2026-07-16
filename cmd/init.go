@@ -2,11 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/samahlstrom/forge-cli/internal/resolve"
 	"github.com/samahlstrom/forge-cli/internal/ui"
@@ -14,8 +12,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// forgeManagedMarker marks a Codex skill directory as one we copied (vs. a
-// user-authored skill of the same name), so refresh/prune only touches ours.
+// forgeManagedMarker identifies a Codex skill directory an older forge COPIED.
+// Nothing writes it any more — skills are linked, not copied — but it is still
+// read to recognise those legacy copies for removal (see retireLegacyCodexCopies).
 const forgeManagedMarker = ".forge-managed"
 
 const forgeMarkerBegin = "<!-- BEGIN FORGE INTEGRATION -->"
@@ -34,13 +33,13 @@ available as slash commands in Claude Code, and installs the toolkit's
 default hooks (e.g. the git pre-push validation gate) from the hooks
 manifest.
 
-Use --global to install skills into ~/.claude/skills/ instead, making
-them available in every Claude Code session (CLI, Desktop, VS Code,
-JetBrains).
+Use --global to link skills into ~/.claude/skills/ (Claude Code) and
+~/.agents/skills/ (Codex), making them available in every session. Both
+point at the same toolkit directories, so neither backend can drift.
 
-Use --force to overwrite existing non-symlink skill directories
-(useful when ~/.claude/skills/ contains stale copies from earlier
-installs).
+Use --force to replace a skill directory whose contents differ from the
+toolkit's. Copies forge itself made are migrated automatically; --force
+is only needed when a directory carries edits that would be lost.
 
 Use --enable-hook <name> (repeatable) to install an opt-in hook that is
 off by default in the manifest (e.g. the leaky PreToolUse validate-gate).
@@ -49,8 +48,8 @@ Skills are symlinked, not copied — running 'forge sync' updates them
 everywhere automatically.`,
 		RunE: runInit,
 	}
-	initCmd.Flags().BoolVarP(&globalFlag, "global", "g", false, "Install skills globally into ~/.claude/ (available in all projects and interfaces)")
-	initCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Overwrite existing non-symlink skill directories")
+	initCmd.Flags().BoolVarP(&globalFlag, "global", "g", false, "Link skills globally for Claude Code and Codex (all projects and interfaces)")
+	initCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Replace skill directories whose contents differ from the toolkit")
 	initCmd.Flags().StringSliceVar(&enableHookFlags, "enable-hook", nil, "Install an opt-in (default:false) hook by name; repeatable")
 	rootCmd.AddCommand(initCmd)
 }
@@ -95,16 +94,14 @@ func runInitGlobal(skills []resolve.SkillInfo) error {
 	}
 
 	claudeDir := filepath.Join(home, ".claude")
-	skillsDir := filepath.Join(claudeDir, "skills")
 
-	ui.Intro("Installing forge globally into ~/.claude/")
+	ui.Intro("Installing forge globally for Claude Code and Codex")
 
-	installed, _ := wireSkillsInto(skillsDir, skills, forceFlag, true)
-	pruneStaleSkillsIn(skillsDir)
+	installed, _ := syncGlobalSkills(forceFlag, true)
 
 	fmt.Println()
 	if installed > 0 {
-		ui.Log.Info(fmt.Sprintf("%d skill(s) installed globally — available in all Claude Code sessions.", installed))
+		ui.Log.Info(fmt.Sprintf("%d skill link(s) installed globally — available in every Claude Code and Codex session.", installed))
 	}
 
 	// Inject forge section into ~/.claude/CLAUDE.md. The import MUST be absolute:
@@ -115,9 +112,9 @@ func runInitGlobal(skills []resolve.SkillInfo) error {
 		ui.Log.Warn(fmt.Sprintf("Could not update ~/.claude/CLAUDE.md: %v", err))
 	}
 
-	// Wire skills into ~/.codex/skills/ so Codex auto-discovers them, and inject
-	// the literal manifest into Codex's global AGENTS.md as an index.
-	wireCodexSkillsGlobal(skills, forceFlag)
+	// Both backends must ingest IDENTICAL instructions: Claude resolves the
+	// toolkit's CLAUDE.md import chain, Codex reads the literal manifest.
+	ensureToolkitClaudeMDImport()
 	injectCodexGlobal()
 
 	// Install global-scoped claude-settings hooks (e.g. ponytail-preload's
@@ -272,6 +269,50 @@ func ensureClaudeMDSectionAt(claudeMD, importLine string) error {
 	return writeForgeSection(claudeMD, importLine, "CLAUDE.md")
 }
 
+// toolkitClaudeMDImport is the toolkit's entire CLAUDE.md: a one-line import of
+// the canonical AGENTS.md.
+const toolkitClaudeMDImport = "@AGENTS.md\n"
+
+// ensureToolkitClaudeMDImport verifies (and repairs) the toolkit's CLAUDE.md so
+// Claude and Codex ingest identical instructions: AGENTS.md is the single
+// canonical file, CLAUDE.md just imports it, and Codex reads AGENTS.md directly.
+//
+// It is deliberately NOT a symlink to AGENTS.md. The toolkit is a git repo that
+// syncs to Sam's Windows machine, where a committed symlink degrades to a broken
+// text file (no core.symlinks) and the instructions silently stop loading. The
+// uppercase @AGENTS.md import is plain text Claude resolves on Windows, macOS and
+// Linux alike — see PR #12 (2568e66), which moved off the symlink for this reason.
+//
+// Only two states are repaired: a missing file, and the pre-PR#12 CLAUDE.md ->
+// AGENTS.md symlink (forge-managed, and the thing that breaks on Windows). A
+// regular file is left alone — it is either already our one-liner or the user's
+// own content, and neither wants rewriting.
+//
+// Lstat, not ReadFile: ReadFile FOLLOWS a symlink, so a content check would read
+// AGENTS.md through the link, conclude it isn't the managed import, and silently
+// leave the symlink in place — never repairing the one case this exists for.
+func ensureToolkitClaudeMDImport() {
+	path := filepath.Join(resolve.ForgeHome(), "CLAUDE.md")
+
+	switch info, err := os.Lstat(path); {
+	case err != nil: // missing — create it
+	case info.Mode()&os.ModeSymlink == 0:
+		return // a regular file: ours already, or the user's
+	default:
+		dest, err := os.Readlink(path)
+		if err != nil || filepath.Base(dest) != "AGENTS.md" {
+			return // a link we do not own
+		}
+		os.Remove(path) // replace the link itself, never write through it
+	}
+
+	if err := os.WriteFile(path, []byte(toolkitClaudeMDImport), 0o644); err != nil {
+		ui.Log.Warn(fmt.Sprintf("Could not repair toolkit CLAUDE.md: %v", err))
+		return
+	}
+	ui.Log.Success("Repaired toolkit CLAUDE.md (portable @AGENTS.md import)")
+}
+
 // globalForgeImport is the import line injected into ~/.claude/CLAUDE.md. It must
 // be ABSOLUTE (@<forgeHome>/CLAUDE.md): a relative @AGENTS.md there resolves next
 // to that file — ~/.claude/AGENTS.md, the user's personal profile — not the
@@ -335,199 +376,73 @@ func injectCodexGlobal() {
 	}
 }
 
-// wireCodexSkillsGlobal copies toolkit skills into ~/.codex/skills/ so Codex
-// auto-discovers them. Codex uses the same <name>/SKILL.md layout as Claude but,
-// unlike Claude, its loader does NOT follow symlinks — so these must be real file
-// copies (matching Codex's own skill-installer). No-op if Codex isn't installed.
-// The AGENTS.md manifest (injectCodexGlobal) is just an index; this is what makes
-// the skills actually loadable.
-func wireCodexSkillsGlobal(skills []resolve.SkillInfo, force bool) {
+// retireLegacyCodexCopies removes the skill copies older Forge builds wrote into
+// ~/.codex/skills. Those copies existed because Codex's loader once ignored
+// symlinks; codex-cli 0.144.1 follows them, so the canonical dirs are now linked
+// into ~/.agents/skills instead (see globalSkillRoots).
+//
+// They must GO, not merely stop being refreshed: Codex reads ~/.codex/skills AND
+// ~/.agents/skills and does not dedupe by name, so a leftover copy loads as a
+// second, drifting version of the same skill. Nothing is lost — every copy is
+// reproducible from the canonical dir it was copied from.
+//
+// Only Forge's own footprint is touched. Anything else — plugin/user-authored
+// skills, Codex's bundled .system skills — is preserved.
+func retireLegacyCodexCopies() {
 	ch := codexHome()
 	if ch == "" {
 		return
 	}
-	if info, err := os.Stat(ch); err != nil || !info.IsDir() {
-		return // Codex not installed
-	}
 	skillsDir := filepath.Join(ch, "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
-		return
-	}
-
-	wanted := map[string]bool{}
-	copied := 0
-	for _, s := range skills {
-		wanted[s.Name] = true
-		dst := filepath.Join(skillsDir, s.Name)
-		if _, err := os.Stat(dst); err == nil {
-			if _, mErr := os.Stat(filepath.Join(dst, forgeManagedMarker)); mErr != nil {
-				if !force && !looksLikeLegacyCodexSkill(dst, s.Name) {
-					// Don't clobber a user-authored skill of the same name.
-					continue
-				}
-				if err := archiveCodexSkillDir(dst); err != nil {
-					ui.Log.Warn(fmt.Sprintf("Could not preserve existing Codex skill %s: %v", s.Name, err))
-					continue
-				}
-			}
-		}
-		if err := copySkillDir(filepath.Dir(s.Path), dst); err != nil {
-			continue
-		}
-		_ = os.WriteFile(filepath.Join(dst, forgeManagedMarker), []byte("forge\n"), 0o644)
-		copied++
-	}
-	pruneStaleCodexSkills(skillsDir, wanted)
-	if copied > 0 {
-		ui.Log.Success(fmt.Sprintf("Copied %d skill(s) into ~/.codex/skills/", copied))
-	}
-}
-
-func looksLikeLegacyCodexSkill(dir, name string) bool {
-	data, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
-	if err != nil {
-		return false
-	}
-	got, ok := codexSkillFrontmatterName(string(data))
-	return ok && got == name
-}
-
-func codexSkillFrontmatterName(content string) (string, bool) {
-	if !strings.HasPrefix(content, "---") {
-		return "", false
-	}
-	body := content[3:]
-	if i := strings.Index(body, "\n---"); i >= 0 {
-		body = body[:i]
-	}
-	for _, ln := range strings.Split(body, "\n") {
-		ln = strings.TrimSpace(ln)
-		if strings.HasPrefix(ln, "name:") {
-			return trimYAMLQuotes(strings.TrimSpace(ln[len("name:"):])), true
-		}
-	}
-	return "", false
-}
-
-func trimYAMLQuotes(s string) string {
-	if len(s) >= 2 {
-		if q := s[0]; (q == '"' || q == '\'') && s[len(s)-1] == q {
-			return s[1 : len(s)-1]
-		}
-	}
-	return s
-}
-
-func archiveCodexSkillDir(dst string) error {
-	parent := filepath.Dir(dst)
-	base := filepath.Base(dst)
-	stamp := time.Now().UTC().Format("20060102150405")
-	for i := 0; i < 100; i++ {
-		name := base + ".stale." + stamp
-		if i > 0 {
-			name = fmt.Sprintf("%s.%d", name, i)
-		}
-		archive := filepath.Join(parent, name)
-		if _, err := os.Lstat(archive); os.IsNotExist(err) {
-			return os.Rename(dst, archive)
-		}
-	}
-	return fmt.Errorf("could not choose archive name for %s", dst)
-}
-
-func normalizeCodexSkillFrontmatter(data []byte, source string) []byte {
-	content := string(data)
-	if !strings.HasPrefix(content, "---\n") {
-		return data
-	}
-	rest := content[len("---\n"):]
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
-		return data
-	}
-	frontmatter := rest[:end]
-	lines := strings.Split(frontmatter, "\n")
-	changed := []int{}
-	for i, line := range lines {
-		normalized := normalizeCodexFrontmatterLine(line)
-		if normalized != line {
-			lines[i] = normalized
-			changed = append(changed, i+2)
-		}
-	}
-	if len(changed) == 0 {
-		return data
-	}
-	ui.Log.Warn(fmt.Sprintf("Normalized Codex YAML frontmatter in %s (lines %v)", source, changed))
-	return []byte("---\n" + strings.Join(lines, "\n") + rest[end:])
-}
-
-func normalizeCodexFrontmatterLine(line string) string {
-	idx := strings.Index(line, ":")
-	if idx < 0 {
-		return line
-	}
-	key := strings.TrimSpace(line[:idx])
-	value := strings.TrimSpace(line[idx+1:])
-	if key == "" || value == "" || !strings.Contains(value, ": ") || isYAMLQuoted(value) {
-		return line
-	}
-	return line[:idx+1] + " " + yamlDoubleQuote(value)
-}
-
-func isYAMLQuoted(s string) bool {
-	return len(s) >= 2 && (s[0] == '"' || s[0] == '\'')
-}
-
-func yamlDoubleQuote(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	return `"` + s + `"`
-}
-
-// copySkillDir recursively copies a skill source directory to dst as real files,
-// replacing any previous copy.
-func copySkillDir(src, dst string) error {
-	if err := os.RemoveAll(dst); err != nil {
-		return err
-	}
-	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, p)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		data, err := os.ReadFile(p) // resolves symlinked source files to real content
-		if err != nil {
-			return err
-		}
-		if rel == "SKILL.md" {
-			data = normalizeCodexSkillFrontmatter(data, p)
-		}
-		return os.WriteFile(target, data, 0o644)
-	})
-}
-
-// pruneStaleCodexSkills removes forge-managed skill copies that are no longer in
-// the toolkit. Never touches user-authored skills (no marker) or .system.
-func pruneStaleCodexSkills(skillsDir string, wanted map[string]bool) {
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
-		return
+		return // Codex not installed, or never had skills
 	}
+	canonical := map[string]bool{}
+	for _, s := range resolve.ListSkills() {
+		canonical[s.Name] = true
+	}
+
+	removed := 0
 	for _, e := range entries {
-		if !e.IsDir() || e.Name() == ".system" || wanted[e.Name()] {
+		if !e.IsDir() || e.Name() == ".system" {
 			continue
 		}
-		marker := filepath.Join(skillsDir, e.Name(), forgeManagedMarker)
-		if _, err := os.Stat(marker); err == nil {
-			os.RemoveAll(filepath.Join(skillsDir, e.Name()))
+		dir := filepath.Join(skillsDir, e.Name())
+		if !isLegacyForgeCopy(dir, e.Name(), canonical) {
+			continue
 		}
+		if err := os.RemoveAll(dir); err != nil {
+			ui.Log.Warn(fmt.Sprintf("Could not retire legacy Codex copy %s: %v", e.Name(), err))
+			continue
+		}
+		removed++
 	}
+	if removed > 0 {
+		ui.Log.Success(fmt.Sprintf("Retired %d legacy Codex skill copy(ies) from ~/.codex/skills/", removed))
+	}
+}
+
+// isLegacyForgeCopy reports whether dir under ~/.codex/skills is a skill copy
+// Forge itself created. Three signatures:
+//   - the .forge-managed marker newer builds wrote (catches copies of skills
+//     since REMOVED from the toolkit, whose names are no longer canonical);
+//   - Forge's own "<toolkit-skill>.stale.<stamp>" archive, which Codex still
+//     loads under its frontmatter name and so duplicates the canonical skill;
+//   - a toolkit skill name — what older, pre-marker builds copied there.
+//
+// The last rung is a name match and nothing more. Forge stopped managing this
+// directory entirely, so a <canonical-name> dir here is ours by construction.
+// Inspecting SKILL.md's frontmatter would look more careful but protects nobody:
+// a user's own "validate" skill declares name: validate too, exactly like our
+// copy. Better an honest name match than a check that only rejects malformed
+// files while reading as consent.
+func isLegacyForgeCopy(dir, name string, canonical map[string]bool) bool {
+	if _, err := os.Stat(filepath.Join(dir, forgeManagedMarker)); err == nil {
+		return true
+	}
+	if base, _, found := strings.Cut(name, ".stale."); found && canonical[base] {
+		return true
+	}
+	return canonical[name]
 }

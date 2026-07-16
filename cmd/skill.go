@@ -11,7 +11,6 @@ import (
 	"github.com/samahlstrom/forge-cli/internal/ui"
 	"github.com/samahlstrom/forge-cli/internal/util"
 
-
 	"github.com/spf13/cobra"
 )
 
@@ -151,6 +150,9 @@ func runSkillAdd(_ *cobra.Command, args []string) error {
 	)
 
 	wireSkill(name)
+	// Publish through the one sync entry point, so a new skill is immediately
+	// visible to Claude and Codex without a second command.
+	wireAllSkillsGlobal()
 	return nil
 }
 

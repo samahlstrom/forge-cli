@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -128,7 +129,10 @@ func pruneStaleSkills() {
 	pruneStaleSkillsIn(filepath.Join(".claude", "skills"))
 }
 
-// pruneStaleSkillsIn removes broken symlinks from any skills directory.
+// pruneStaleSkillsIn removes broken symlinks from any skills directory: both a
+// dangling <name> directory link (current layout) and a dangling <name>/SKILL.md
+// file link (the layout older installs wrote). Only symlinks are touched, so
+// user-authored skills are never pruned.
 func pruneStaleSkillsIn(skillsDir string) {
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
@@ -136,36 +140,43 @@ func pruneStaleSkillsIn(skillsDir string) {
 	}
 
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		target := filepath.Join(skillsDir, entry.Name())
+		info, err := os.Lstat(target)
+		if err != nil {
 			continue
 		}
-		targetFile := filepath.Join(skillsDir, entry.Name(), "SKILL.md")
-
-		info, err := os.Lstat(targetFile)
-		if err != nil || info.Mode()&os.ModeSymlink == 0 {
-			continue
+		if info.Mode()&os.ModeSymlink == 0 {
+			target = filepath.Join(target, "SKILL.md")
+			if info, err = os.Lstat(target); err != nil || info.Mode()&os.ModeSymlink == 0 {
+				continue
+			}
 		}
-
-		if _, err := os.Stat(targetFile); err != nil {
-			os.Remove(targetFile)
-			os.Remove(filepath.Join(skillsDir, entry.Name()))
+		// os.Stat follows the link: an error means it resolves to nothing.
+		if _, err := os.Stat(target); err != nil {
+			os.Remove(target)
+			os.Remove(filepath.Join(skillsDir, entry.Name())) // no-op unless now empty
 			ui.Log.Step(fmt.Sprintf("Removed stale link: %s", entry.Name()))
 		}
 	}
 }
 
-// wireSkillsInto installs skills as symlinks under skillsDir. Returns counts.
+// wireSkillsInto links canonical toolkit skill directories under skillsDir.
+// Returns counts. Each entry is a DIRECTORY symlink to the canonical dir, so a
+// skill's sibling resources (scripts/, references/) resolve through it and the
+// canonical copy stays the only content.
 // Behavior per skill:
 //   - already correctly linked → no-op
-//   - SKILL.md is a symlink (even broken) or the dir itself is a symlink → ours, replace
-//   - regular file/dir → skip unless force=true, then replace
+//   - any symlink (even broken/stale) → ours, relink
+//   - a forge-produced copy (old SKILL.md link, or identical content) → migrate
+//   - empty dir → placeholder, safe to replace
+//   - non-empty dir → user content, skip unless force=true
 func wireSkillsInto(skillsDir string, skills []resolve.SkillInfo, force, verbose bool) (int, int) {
 	installed, skipped := 0, 0
 	for _, skill := range skills {
 		targetDir := filepath.Join(skillsDir, skill.Name)
-		targetFile := filepath.Join(targetDir, "SKILL.md")
+		sourceDir := filepath.Dir(skill.Path)
 
-		if dest, err := os.Readlink(targetFile); err == nil && dest == skill.Path {
+		if dest, err := os.Readlink(targetDir); err == nil && dest == sourceDir {
 			if verbose {
 				ui.Log.Step(fmt.Sprintf("%s (already linked)", skill.Name))
 			}
@@ -173,72 +184,124 @@ func wireSkillsInto(skillsDir string, skills []resolve.SkillInfo, force, verbose
 			continue
 		}
 
-		linkInfo, linkErr := os.Lstat(targetFile)
-		dirInfo, dirErr := os.Lstat(targetDir)
-
-		isOurs := false
-		if linkErr == nil && linkInfo.Mode()&os.ModeSymlink != 0 {
-			isOurs = true
-		} else if linkErr != nil && dirErr == nil && dirInfo.Mode()&os.ModeSymlink != 0 {
-			isOurs = true
-		}
-
-		if !isOurs && linkErr == nil && !force {
-			if verbose {
-				ui.Log.Step(fmt.Sprintf("%s (project-specific, skipped — use --force to overwrite)", skill.Name))
+		if info, err := os.Lstat(targetDir); err == nil {
+			switch {
+			case info.Mode()&os.ModeSymlink != 0:
+				os.Remove(targetDir) // a stale link of ours — relink below
+			case force || isReplaceableForgeCopy(targetDir, sourceDir):
+				os.RemoveAll(targetDir)
+			default:
+				// os.Remove only succeeds on an empty dir, so it clears a
+				// placeholder and refuses to touch real user content.
+				if err := os.Remove(targetDir); err != nil {
+					if verbose {
+						ui.Log.Step(fmt.Sprintf("%s (user-authored, skipped — use --force to replace)", skill.Name))
+					}
+					skipped++
+					continue
+				}
 			}
-			skipped++
-			continue
 		}
 
-		if linkErr == nil {
-			os.Remove(targetFile)
-		}
-		// If targetDir itself is a symlink (e.g. broken link from old install), remove it.
-		if dirErr == nil && dirInfo.Mode()&os.ModeSymlink != 0 {
-			os.Remove(targetDir)
-		} else if force && dirErr == nil && dirInfo.IsDir() && !isOurs {
-			os.RemoveAll(targetDir)
-		}
-
-		if err := os.MkdirAll(targetDir, 0o755); err != nil {
-			ui.Log.Error(fmt.Sprintf("failed to create %s: %v", targetDir, err))
+		if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+			ui.Log.Error(fmt.Sprintf("failed to create %s: %v", skillsDir, err))
 			continue
 		}
-		if err := os.Symlink(skill.Path, targetFile); err != nil {
+		if err := os.Symlink(sourceDir, targetDir); err != nil {
 			ui.Log.Error(fmt.Sprintf("failed to symlink %s: %v", skill.Name, err))
 			continue
 		}
 		if verbose {
-			ui.Log.Success(fmt.Sprintf("%s → %s", skill.Name, ui.Dim(skill.Path)))
+			ui.Log.Success(fmt.Sprintf("%s → %s", skill.Name, ui.Dim(sourceDir)))
 		}
 		installed++
 	}
 	return installed, skipped
 }
 
-// wireAllSkillsGlobal re-syncs ~/.claude/skills/ from the toolkit. Only acts
-// if ~/.claude/skills/ exists (i.e. user previously ran `forge init --global`).
-// Never overwrites non-symlink skills (no --force here).
+// isReplaceableForgeCopy reports whether dir is a skill directory forge itself
+// produced, so migrating it to a canonical link destroys nothing and needs no
+// --force. Two provable signatures:
+//
+//   - <name>/SKILL.md is a symlink INTO the toolkit — the layout older builds
+//     wrote. A SKILL.md link pointing elsewhere belongs to another installer.
+//   - <name>/SKILL.md is byte-identical to the canonical file — a copy made
+//     before the toolkit was the single source. Identical content means there is
+//     nothing to lose.
+//
+// Anything else may carry someone's edits and is preserved for --force.
+func isReplaceableForgeCopy(dir, sourceDir string) bool {
+	skillMD := filepath.Join(dir, "SKILL.md")
+	if dest, err := os.Readlink(skillMD); err == nil {
+		rel, relErr := filepath.Rel(resolve.SkillsDir(), dest)
+		return relErr == nil && !strings.HasPrefix(rel, "..")
+	}
+	got, err := os.ReadFile(skillMD)
+	if err != nil {
+		return false
+	}
+	want, err := os.ReadFile(filepath.Join(sourceDir, "SKILL.md"))
+	return err == nil && bytes.Equal(got, want)
+}
+
+// globalSkillRoots are the skill directories the supported backends read, both
+// pointed at the same canonical toolkit dirs so no copy can drift:
+//   - Claude Code reads ~/.claude/skills
+//   - Codex reads ~/.agents/skills (NOT ~/.claude/skills)
+//
+// Both follow directory symlinks — verified against codex-cli 0.144.1, which
+// also supersedes the "Codex ignores symlinks" finding behind the old
+// ~/.codex/skills copies (see retireLegacyCodexCopies).
+func globalSkillRoots(home string) []string {
+	return []string{
+		filepath.Join(home, ".claude", "skills"),
+		filepath.Join(home, ".agents", "skills"),
+	}
+}
+
+// syncGlobalSkills is THE entry point every skill create/install/sync path uses
+// to publish the toolkit: it links canonical skill dirs into each backend's
+// root, prunes links whose skill is gone, and retires legacy Codex copies.
+// Idempotent — reruns are byte-stable.
+func syncGlobalSkills(force, verbose bool) (int, int) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return 0, 0
+	}
+	skills := resolve.ListSkills()
+	installed, skipped := 0, 0
+	for _, root := range globalSkillRoots(home) {
+		i, s := wireSkillsInto(root, skills, force, verbose)
+		pruneStaleSkillsIn(root)
+		installed, skipped = installed+i, skipped+s
+	}
+	retireLegacyCodexCopies()
+	return installed, skipped
+}
+
+// wireAllSkillsGlobal re-syncs the global skill roots from the toolkit. Only
+// acts if ~/.claude/skills/ exists (i.e. the user opted in with `forge init
+// --global`) — otherwise it would create global config for someone who never
+// asked. Never overwrites user-authored skills (no --force here).
 func wireAllSkillsGlobal() {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return
 	}
-	skillsDir := filepath.Join(home, ".claude", "skills")
-	info, err := os.Stat(skillsDir)
+	info, err := os.Stat(filepath.Join(home, ".claude", "skills"))
 	if err != nil || !info.IsDir() {
 		return
 	}
-	skills := resolve.ListSkills()
-	installed, _ := wireSkillsInto(skillsDir, skills, false, false)
-	pruneStaleSkillsIn(skillsDir)
+	installed, skipped := syncGlobalSkills(false, false)
 	if installed > 0 {
-		ui.Log.Success(fmt.Sprintf("Re-synced %d skill(s) into ~/.claude/skills/", installed))
+		ui.Log.Success(fmt.Sprintf("Re-synced %d skill link(s) for Claude Code and Codex", installed))
 	}
-
-	// Keep Codex's skill directory in sync too (~/.codex/skills/).
-	wireCodexSkillsGlobal(skills, false)
+	// Never skip silently: a preserved directory means that backend keeps loading
+	// its own copy instead of the toolkit's, which is exactly the drift we're here
+	// to stop. Say so, and name the way out.
+	if skipped > 0 {
+		ui.Log.Warn(fmt.Sprintf("%d skill(s) kept their own copy and still differ from the toolkit — run 'forge init --global --force' to replace them", skipped))
+	}
 }
 
 // updateSkillsGitignore scans .claude/skills/ for symlinked entries and writes
