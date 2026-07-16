@@ -448,6 +448,28 @@ func TestBrowserSmokeUsesCanonicalNamedSessions(t *testing.T) {
 	}
 }
 
+func TestBrowserSmokeUsesOwnedShortSocketDirectory(t *testing.T) {
+	fake := newFakeBrowserRuntime(browserPlatform{OS: "darwin", Arch: "arm64"})
+	if err := ensureBrowserRuntime(context.Background(), fake.deps()); err != nil {
+		t.Fatal(err)
+	}
+	var socketDir string
+	for _, command := range fake.commands {
+		if command.Name != "agent-browser" {
+			continue
+		}
+		got := envValue(command.Env, "AGENT_BROWSER_SOCKET_DIR")
+		if !strings.HasPrefix(got, "/tmp/forge-ab-") || len(got) > len("/tmp/forge-ab-")+8 {
+			t.Fatalf("browser command lacks a short owned socket directory: %+v", command)
+		}
+		if socketDir == "" {
+			socketDir = got
+		} else if socketDir != got {
+			t.Fatalf("browser provisioning split its socket namespace: %q then %q", socketDir, got)
+		}
+	}
+}
+
 func TestEnsureBrowserRuntimeInstallsMissingAgentBrowser(t *testing.T) {
 	fake := newFakeBrowserRuntime(browserPlatform{OS: "linux", Arch: "amd64"})
 	delete(fake.paths, "agent-browser")
@@ -676,6 +698,16 @@ func envHas(env []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func envValue(env []string, name string) string {
+	prefix := name + "="
+	for _, item := range env {
+		if strings.HasPrefix(item, prefix) {
+			return strings.TrimPrefix(item, prefix)
+		}
+	}
+	return ""
 }
 
 func findCommand(commands []browserCommand, name string, args ...string) bool {

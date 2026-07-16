@@ -672,10 +672,17 @@ func runBrowser(ctx context.Context, deps browserRuntimeDeps, dir, name string, 
 }
 
 func runBrowserWithEnv(ctx context.Context, deps browserRuntimeDeps, dir string, extra []string, name string, args ...string) ([]byte, error) {
-	return deps.run(ctx, browserCommand{Name: name, Args: args, Dir: dir, Env: browserCommandEnv(deps, extra)})
+	return deps.run(ctx, browserCommand{Name: name, Args: args, Dir: dir, Env: browserCommandEnv(deps, shortBrowserSocketDir(dir), extra)})
 }
 
-func browserCommandEnv(deps browserRuntimeDeps, extra []string) []string {
+func shortBrowserSocketDir(dir string) string {
+	sum := sha256.Sum256([]byte(filepath.Clean(dir)))
+	// Supported browser hosts are Darwin/Linux. Keep the socket root short enough
+	// for the canonical named session on macOS's 103-byte Unix-socket limit.
+	return filepath.Join(string(os.PathSeparator), "tmp", "forge-ab-"+hex.EncodeToString(sum[:4]))
+}
+
+func browserCommandEnv(deps browserRuntimeDeps, socketDir string, extra []string) []string {
 	base := deps.baseEnv
 	if len(base) == 0 {
 		base = []string{"HOME=" + deps.homeDir, "PATH=" + deps.pathEnv}
@@ -695,6 +702,7 @@ func browserCommandEnv(deps browserRuntimeDeps, extra []string) []string {
 		"CI=1",
 		"AGENT_BROWSER_HEADED=false",
 		"AGENT_BROWSER_AUTO_CONNECT=false",
+		"AGENT_BROWSER_SOCKET_DIR="+socketDir,
 		"HOMEBREW_NO_AUTO_UPDATE=1",
 		"NPM_CONFIG_AUDIT=false",
 		"NPM_CONFIG_FUND=false",
