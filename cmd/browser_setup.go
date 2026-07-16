@@ -25,7 +25,7 @@ const (
 )
 
 var (
-	minimumAgentBrowserVersion = browserVersion{0, 31, 0}
+	minimumAgentBrowserVersion = browserVersion{0, 32, 1}
 	errLightpandaNeedsWSL      = errors.New("Lightpanda has no native Windows binary; install WSL2 and rerun forge setup inside WSL")
 	versionPattern             = regexp.MustCompile(`([0-9]+)\.([0-9]+)\.([0-9]+)`)
 )
@@ -523,17 +523,6 @@ func closeAndVerifySession(ctx context.Context, deps browserRuntimeDeps, dir, co
 	}
 	if _, err := runBrowser(ctx, deps, dir, "agent-browser", sessionArgs(config, engine, session, "close")...); err != nil {
 		return fmt.Errorf("close exact session %s: %w", session, err)
-	}
-	out, err := runBrowser(ctx, deps, dir, "agent-browser", sessionArgs(config, engine, session, "--json", "session", "info")...)
-	if err != nil {
-		return fmt.Errorf("inspect closed session %s: %w", session, err)
-	}
-	info, err := parseSessionInfo(out)
-	if err != nil {
-		return err
-	}
-	if info.Data.Active {
-		return fmt.Errorf("session %s remains active after exact close", session)
 	}
 	list, err := runBrowser(ctx, deps, dir, "agent-browser", agentArgs(config, "--json", "session", "list")...)
 	if err != nil {

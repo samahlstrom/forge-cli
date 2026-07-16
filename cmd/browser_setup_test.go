@@ -399,6 +399,27 @@ func TestEnsureBrowserRuntimeHealthySecondRunHasNoInstallOrUpgrade(t *testing.T)
 	assertSafeBrowserCommands(t, fake.commands)
 }
 
+func TestBrowserProvisioningDoesNotQuerySessionInfoAfterExactClose(t *testing.T) {
+	fake := newFakeBrowserRuntime(browserPlatform{OS: "darwin", Arch: "arm64"})
+	if err := ensureBrowserRuntime(context.Background(), fake.deps()); err != nil {
+		t.Fatal(err)
+	}
+
+	closed := map[string]bool{}
+	for _, command := range fake.commands {
+		if command.Name != "agent-browser" {
+			continue
+		}
+		session := argValue(command.Args, "--session")
+		if hasArg(command.Args, "close") {
+			closed[session] = true
+		}
+		if closed[session] && hasSequence(command.Args, "session", "info") {
+			t.Fatalf("queried session info after exact close for %q: %+v", session, command)
+		}
+	}
+}
+
 func TestEnsureBrowserRuntimeInstallsMissingAgentBrowser(t *testing.T) {
 	fake := newFakeBrowserRuntime(browserPlatform{OS: "linux", Arch: "amd64"})
 	delete(fake.paths, "agent-browser")
@@ -433,6 +454,17 @@ func TestEnsureBrowserRuntimeUpgradesCapabilityDeficientVersion(t *testing.T) {
 	}
 	if !findCommand(fake.commands, "npm", "install", "agent-browser@latest") {
 		t.Fatalf("capability-deficient binary was not upgraded: %+v", fake.commands)
+	}
+}
+
+func TestEnsureBrowserRuntimeRequiresReleasedLifecycleTarget(t *testing.T) {
+	fake := newFakeBrowserRuntime(browserPlatform{OS: "linux", Arch: "amd64"})
+	fake.agentVersion = "0.31.0"
+	if err := ensureBrowserRuntime(context.Background(), fake.deps()); err != nil {
+		t.Fatal(err)
+	}
+	if !findCommand(fake.commands, "npm", "install", "agent-browser@latest") {
+		t.Fatalf("agent-browser below the 0.32.1 lifecycle target was accepted: %+v", fake.commands)
 	}
 }
 
