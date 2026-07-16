@@ -68,10 +68,11 @@ type browserCommand struct {
 }
 
 type browserRuntimeDeps struct {
-	platform browserPlatform
-	homeDir  string
-	pathEnv  string
-	baseEnv  []string
+	platform  browserPlatform
+	homeDir   string
+	pathEnv   string
+	baseEnv   []string
+	socketDir string
 
 	lookPath     func(string) (string, error)
 	evalSymlinks func(string) (string, error)
@@ -164,6 +165,12 @@ func ensureBrowserRuntime(ctx context.Context, deps browserRuntimeDeps) error {
 		return fmt.Errorf("create isolated browser setup directory: %w", err)
 	}
 	defer deps.removeAll(tmp)
+	socketDir, err := deps.makeTempDir("/tmp", "forge-ab-")
+	if err != nil {
+		return fmt.Errorf("create short browser socket directory: %w", err)
+	}
+	defer deps.removeAll(socketDir)
+	deps.socketDir = socketDir
 
 	config := filepath.Join(tmp, "agent-browser.json")
 	if err := deps.writeFile(config, []byte("{}\n"), 0o600); err != nil {
@@ -672,14 +679,7 @@ func runBrowser(ctx context.Context, deps browserRuntimeDeps, dir, name string, 
 }
 
 func runBrowserWithEnv(ctx context.Context, deps browserRuntimeDeps, dir string, extra []string, name string, args ...string) ([]byte, error) {
-	return deps.run(ctx, browserCommand{Name: name, Args: args, Dir: dir, Env: browserCommandEnv(deps, shortBrowserSocketDir(dir), extra)})
-}
-
-func shortBrowserSocketDir(dir string) string {
-	sum := sha256.Sum256([]byte(filepath.Clean(dir)))
-	// Supported browser hosts are Darwin/Linux. Keep the socket root short enough
-	// for the canonical named session on macOS's 103-byte Unix-socket limit.
-	return filepath.Join(string(os.PathSeparator), "tmp", "forge-ab-"+hex.EncodeToString(sum[:4]))
+	return deps.run(ctx, browserCommand{Name: name, Args: args, Dir: dir, Env: browserCommandEnv(deps, deps.socketDir, extra)})
 }
 
 func browserCommandEnv(deps browserRuntimeDeps, socketDir string, extra []string) []string {

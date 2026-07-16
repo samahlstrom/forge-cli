@@ -33,6 +33,7 @@ type fakeBrowserRuntime struct {
 	files    map[string][]byte
 	commands []browserCommand
 	sessions map[string]*fakeBrowserSession
+	removed  []string
 	nextID   int
 
 	agentVersion string
@@ -101,6 +102,7 @@ func (f *fakeBrowserRuntime) deps() browserRuntimeDeps {
 			return filepath.Join("/tmp", strings.TrimSuffix(pattern, "*")+strconv.Itoa(f.nextID)), nil
 		},
 		removeAll: func(path string) error {
+			f.removed = append(f.removed, path)
 			for name := range f.files {
 				if strings.HasPrefix(name, path+string(os.PathSeparator)) {
 					delete(f.files, name)
@@ -452,6 +454,13 @@ func TestBrowserSmokeUsesOwnedShortSocketDirectory(t *testing.T) {
 	fake := newFakeBrowserRuntime(browserPlatform{OS: "darwin", Arch: "arm64"})
 	if err := ensureBrowserRuntime(context.Background(), fake.deps()); err != nil {
 		t.Fatal(err)
+	}
+	removedSocketDir := false
+	for _, path := range fake.removed {
+		removedSocketDir = removedSocketDir || strings.HasPrefix(path, "/tmp/forge-ab-")
+	}
+	if !removedSocketDir {
+		t.Fatalf("owned socket directory was not removed: %v", fake.removed)
 	}
 	var socketDir string
 	for _, command := range fake.commands {
