@@ -25,7 +25,7 @@ import (
 const (
 	lightpandaVersion      = "0.3.4"
 	lightpandaInstallerURL = "https://pkg.lightpanda.io/install.sh"
-	browserProbeURL        = "data:text/html,%3Cmain%20id%3D%22forge-probe%22%3E%3Cbutton%20id%3D%22forge-probe-button%22%20onclick%3D%22document.getElementById%28%27forge-probe-status%27%29.textContent%3D%27ready%27%22%3EReady%3C%2Fbutton%3E%3Cspan%20id%3D%22forge-probe-status%22%3Eready%3C%2Fspan%3E%3C%2Fmain%3E"
+	browserProbeURL        = "data:text/html,%3Cmain%20id%3D%22forge-probe%22%3E%3Cbutton%20id%3D%22forge-probe-button%22%20onclick%3D%22document.getElementById%28%27forge-probe-status%27%29.textContent%3D%27ready%27%22%3EReady%3C%2Fbutton%3E%3Cspan%20id%3D%22forge-probe-status%22%3Epending%3C%2Fspan%3E%3C%2Fmain%3E"
 )
 
 var (
@@ -401,7 +401,7 @@ func installLightpanda(ctx context.Context, deps browserRuntimeDeps, dir string)
 	}
 	installDir := filepath.Join(deps.homeDir, ".local", "bin")
 	if !pathContains(deps.pathEnv, installDir) {
-		return fmt.Errorf("official Lightpanda installer targets %s, which is not on PATH; add it to PATH and rerun forge setup", installDir)
+		deps.pathEnv = installDir + string(os.PathListSeparator) + deps.pathEnv
 	}
 	script := filepath.Join(dir, "lightpanda-install.sh")
 	if _, err := runBrowser(ctx, deps, dir, "curl", "--fail", "--silent", "--show-error", "--location", "--output", script, lightpandaInstallerURL); err != nil {
@@ -428,28 +428,40 @@ func smokeLightpanda(ctx context.Context, deps browserRuntimeDeps, dir, config s
 	}
 	var roots []int
 	defer func() {
-		cleanupErr := closeAndVerifySession(ctx, deps, dir, config, "lightpanda", session, roots)
-		if err == nil && cleanupErr != nil {
-			err = cleanupErr
-		}
+		err = errors.Join(err, closeAndVerifySession(context.Background(), deps, dir, config, "lightpanda", session, roots))
 	}()
+	if _, err = runBrowser(ctx, deps, dir, "agent-browser", sessionArgs(config, "lightpanda", session, "open", browserProbeURL)...); err != nil {
+		return err
+	}
+	roots, err = inspectActiveSession(ctx, deps, dir, config, "lightpanda", session)
+	if err != nil {
+		return err
+	}
 	commands := [][]string{
-		{"open", browserProbeURL},
 		{"snapshot", "--json"},
 		{"get", "text", "#forge-probe-status"},
 		{"eval", "document.getElementById('forge-probe-status').textContent"},
 		{"click", "#forge-probe-button"},
+		{"get", "text", "#forge-probe-status"},
+		{"eval", "document.getElementById('forge-probe-status').textContent"},
 		{"console"},
 		{"errors"},
 		{"network", "requests"},
 	}
-	for _, args := range commands {
-		if _, err = runBrowser(ctx, deps, dir, "agent-browser", sessionArgs(config, "lightpanda", session, args...)...); err != nil {
+	for i, args := range commands {
+		out, runErr := runBrowser(ctx, deps, dir, "agent-browser", sessionArgs(config, "lightpanda", session, args...)...)
+		if runErr != nil {
+			err = runErr
 			return err
 		}
+		if (i == 1 || i == 2) && !browserOutputIs(out, "pending") {
+			return fmt.Errorf("Lightpanda pending status output = %q", strings.TrimSpace(string(out)))
+		}
+		if (i == 4 || i == 5) && !browserOutputIs(out, "ready") {
+			return fmt.Errorf("Lightpanda status output = %q", strings.TrimSpace(string(out)))
+		}
 	}
-	roots, err = inspectActiveSession(ctx, deps, dir, config, "lightpanda", session)
-	return err
+	return nil
 }
 
 func smokeChrome(ctx context.Context, deps browserRuntimeDeps, dir, config, attempt string) (err error) {
@@ -459,18 +471,18 @@ func smokeChrome(ctx context.Context, deps browserRuntimeDeps, dir, config, atte
 	}
 	var roots []int
 	defer func() {
-		cleanupErr := closeAndVerifySession(ctx, deps, dir, config, "chrome", session, roots)
-		if err == nil && cleanupErr != nil {
-			err = cleanupErr
-		}
+		err = errors.Join(err, closeAndVerifySession(context.Background(), deps, dir, config, "chrome", session, roots))
 	}()
-	for _, args := range [][]string{{"set", "viewport", "800", "600"}, {"open", browserProbeURL}, {"wait", "#forge-probe"}} {
+	for _, args := range [][]string{{"set", "viewport", "800", "600"}, {"open", browserProbeURL}} {
 		if _, err = runBrowser(ctx, deps, dir, "agent-browser", sessionArgs(config, "chrome", session, args...)...); err != nil {
 			return err
 		}
 	}
 	roots, err = inspectActiveSession(ctx, deps, dir, config, "chrome", session)
 	if err != nil {
+		return err
+	}
+	if _, err = runBrowser(ctx, deps, dir, "agent-browser", sessionArgs(config, "chrome", session, "wait", "#forge-probe")...); err != nil {
 		return err
 	}
 	shot := filepath.Join(dir, "chrome-selector-"+attempt+".png")
@@ -540,7 +552,11 @@ func closeAndVerifySession(ctx context.Context, deps browserRuntimeDeps, dir, co
 		if err != nil {
 			return fmt.Errorf("list sessions after closing %s: %w", session, err)
 		}
-		if !sessionListed(list, session) {
+		listed, listErr := sessionListed(list, session)
+		if listErr != nil {
+			return fmt.Errorf("parse session list after closing %s: %w", session, listErr)
+		}
+		if !listed {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -570,23 +586,35 @@ func parseSessionInfo(output []byte) (browserSessionInfo, error) {
 	return info, nil
 }
 
-func sessionListed(output []byte, session string) bool {
+func browserOutputIs(output []byte, want string) bool {
+	if strings.TrimSpace(string(output)) == want {
+		return true
+	}
+	var value string
+	return json.Unmarshal(output, &value) == nil && value == want
+}
+
+func sessionListed(output []byte, session string) (bool, error) {
 	var result struct {
-		Data struct {
-			Sessions []struct {
+		Success *bool `json:"success"`
+		Data    *struct {
+			Sessions *[]struct {
 				Name string `json:"name"`
 			} `json:"sessions"`
 		} `json:"data"`
 	}
 	if json.Unmarshal(output, &result) != nil {
-		return true
+		return false, errors.New("invalid JSON")
 	}
-	for _, item := range result.Data.Sessions {
+	if result.Success == nil || !*result.Success || result.Data == nil || result.Data.Sessions == nil {
+		return false, errors.New("missing successful session list data")
+	}
+	for _, item := range *result.Data.Sessions {
 		if item.Name == session {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 func listBrowserProcesses(ctx context.Context, deps browserRuntimeDeps, dir string) ([]browserProcess, error) {
@@ -597,14 +625,18 @@ func listBrowserProcesses(ctx context.Context, deps browserRuntimeDeps, dir stri
 	var processes []browserProcess
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) < 3 {
+		if len(fields) == 0 {
 			continue
+		}
+		if len(fields) < 3 {
+			return nil, fmt.Errorf("parse browser process row %q", line)
 		}
 		pid, pidErr := strconv.Atoi(fields[0])
 		ppid, ppidErr := strconv.Atoi(fields[1])
-		if pidErr == nil && ppidErr == nil {
-			processes = append(processes, browserProcess{pid: pid, ppid: ppid, command: strings.Join(fields[2:], " ")})
+		if pidErr != nil || ppidErr != nil {
+			return nil, fmt.Errorf("parse browser process row %q", line)
 		}
+		processes = append(processes, browserProcess{pid: pid, ppid: ppid, command: strings.Join(fields[2:], " ")})
 	}
 	return processes, nil
 }

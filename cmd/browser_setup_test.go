@@ -44,6 +44,7 @@ type fakeBrowserRuntime struct {
 	lightpandaInstallPathOnly bool
 	chromeReady               bool
 	staleSessionListQueries   int
+	lightpandaClicked         bool
 	fail                      map[string]error
 }
 
@@ -236,7 +237,7 @@ func (f *fakeBrowserRuntime) runAgentBrowser(command browserCommand) ([]byte, er
 		})
 	}
 	if hasSequence(args, "session", "list") {
-		var sessions []map[string]any
+		sessions := make([]map[string]any, 0)
 		for name, s := range f.sessions {
 			if s.active {
 				sessions = append(sessions, map[string]any{"name": name, "engine": s.engine})
@@ -263,6 +264,9 @@ func (f *fakeBrowserRuntime) runAgentBrowser(command browserCommand) ([]byte, er
 		}
 		f.nextID++
 		f.sessions[session] = &fakeBrowserSession{active: true, engine: engine, pid: 3000 + f.nextID}
+		if engine == "lightpanda" {
+			f.lightpandaClicked = false
+		}
 		return []byte("opened"), nil
 	}
 	if hasArg(args, "screenshot") {
@@ -277,10 +281,20 @@ func (f *fakeBrowserRuntime) runAgentBrowser(command browserCommand) ([]byte, er
 		return []byte("closed"), nil
 	}
 	if hasArg(args, "get") {
+		if engine == "lightpanda" && !f.lightpandaClicked {
+			return []byte("pending"), nil
+		}
 		return []byte("ready"), nil
 	}
 	if hasArg(args, "eval") {
+		if engine == "lightpanda" && !f.lightpandaClicked {
+			return []byte(`"pending"`), nil
+		}
 		return []byte(`"ready"`), nil
+	}
+	if hasArg(args, "click") && engine == "lightpanda" {
+		f.lightpandaClicked = true
+		return []byte("clicked"), nil
 	}
 	if hasArg(args, "snapshot") {
 		return []byte(`{"success":true,"data":{"snapshot":"button Ready"}}`), nil
@@ -446,6 +460,161 @@ func TestBrowserProvisioningWaitsForExactSessionListRemoval(t *testing.T) {
 	fake.staleSessionListQueries = 1
 	if err := ensureBrowserRuntime(context.Background(), fake.deps()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSmokeCleanupUsesIndependentContextAndReportsCleanupFailure(t *testing.T) {
+	fake := newFakeBrowserRuntime(browserPlatform{OS: "darwin", Arch: "arm64"})
+	deps := fake.deps()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sawIndependentCleanupContext := false
+	deps.run = func(commandCtx context.Context, command browserCommand) ([]byte, error) {
+		if hasArg(command.Args, "open") {
+			out, err := fake.run(commandCtx, command)
+			cancel()
+			return out, err
+		}
+		if hasArg(command.Args, "snapshot") {
+			return nil, errors.New("smoke failure")
+		}
+		if hasArg(command.Args, "close") {
+			sawIndependentCleanupContext = commandCtx.Err() == nil
+			if !sawIndependentCleanupContext {
+				return nil, errors.New("cleanup context canceled")
+			}
+		}
+		return fake.run(commandCtx, command)
+	}
+	err := smokeLightpanda(ctx, deps, "/tmp/smoke", "/tmp/config")
+	if err == nil || !strings.Contains(err.Error(), "smoke failure") {
+		t.Fatalf("smoke error = %v", err)
+	}
+	if !sawIndependentCleanupContext {
+		t.Fatal("cleanup did not receive an independent context")
+	}
+}
+
+func TestSmokeReportsCleanupFailureAlongsideSmokeFailure(t *testing.T) {
+	fake := newFakeBrowserRuntime(browserPlatform{OS: "darwin", Arch: "arm64"})
+	deps := fake.deps()
+	deps.run = func(ctx context.Context, command browserCommand) ([]byte, error) {
+		if hasArg(command.Args, "snapshot") {
+			return nil, errors.New("smoke failure")
+		}
+		if hasArg(command.Args, "close") {
+			return nil, errors.New("cleanup failure")
+		}
+		return fake.run(ctx, command)
+	}
+	err := smokeLightpanda(context.Background(), deps, "/tmp/smoke", "/tmp/config")
+	if err == nil || !strings.Contains(err.Error(), "smoke failure") || !strings.Contains(err.Error(), "cleanup failure") {
+		t.Fatalf("error must report smoke and cleanup failures, got %v", err)
+	}
+}
+
+func TestSmokeCapturesOwnershipImmediatelyAfterOpen(t *testing.T) {
+	fake := newFakeBrowserRuntime(browserPlatform{OS: "darwin", Arch: "arm64"})
+	deps := fake.deps()
+	deps.run = func(ctx context.Context, command browserCommand) ([]byte, error) {
+		if hasArg(command.Args, "snapshot") {
+			_, _ = fake.run(ctx, command)
+			return nil, errors.New("snapshot failure")
+		}
+		return fake.run(ctx, command)
+	}
+	if err := smokeLightpanda(context.Background(), deps, "/tmp/smoke", "/tmp/config"); err == nil {
+		t.Fatal("smoke unexpectedly succeeded")
+	}
+	open, info, snapshot := -1, -1, -1
+	for i, command := range fake.commands {
+		if command.Name != "agent-browser" {
+			continue
+		}
+		if hasArg(command.Args, "open") {
+			open = i
+		}
+		if hasSequence(command.Args, "session", "info") && info < 0 {
+			info = i
+		}
+		if hasArg(command.Args, "snapshot") {
+			snapshot = i
+		}
+	}
+	if open < 0 || info <= open || snapshot <= info {
+		t.Fatalf("ownership must be captured after open and before later smoke steps: open=%d info=%d snapshot=%d", open, info, snapshot)
+	}
+}
+
+func TestCloseAndVerifySessionRejectsMalformedSessionList(t *testing.T) {
+	for _, output := range []string{`{}`, `{"success":false,"data":{"sessions":[]}}`, `{"success":true,"data":{}}`} {
+		t.Run(output, func(t *testing.T) {
+			fake := newFakeBrowserRuntime(browserPlatform{OS: "darwin", Arch: "arm64"})
+			fake.sessions["owned"] = &fakeBrowserSession{active: true, engine: "lightpanda", pid: 3001}
+			deps := fake.deps()
+			deps.run = func(ctx context.Context, command browserCommand) ([]byte, error) {
+				if hasSequence(command.Args, "session", "list") {
+					return []byte(output), nil
+				}
+				return fake.run(ctx, command)
+			}
+			if err := closeAndVerifySession(context.Background(), deps, "/tmp/smoke", "/tmp/config", "lightpanda", "owned", nil); err == nil {
+				t.Fatal("malformed session-list response was accepted")
+			}
+		})
+	}
+}
+
+func TestListBrowserProcessesRejectsMalformedNonemptyRows(t *testing.T) {
+	fake := newFakeBrowserRuntime(browserPlatform{OS: "darwin", Arch: "arm64"})
+	deps := fake.deps()
+	deps.run = func(_ context.Context, command browserCommand) ([]byte, error) {
+		if command.Name == "ps" {
+			return []byte("not-a-process-row"), nil
+		}
+		return fake.run(context.Background(), command)
+	}
+	if _, err := listBrowserProcesses(context.Background(), deps, "/tmp/smoke"); err == nil {
+		t.Fatal("non-empty malformed process output was accepted")
+	}
+}
+
+func TestSmokeLightpandaRequiresPendingToReadyOutput(t *testing.T) {
+	fake := newFakeBrowserRuntime(browserPlatform{OS: "darwin", Arch: "arm64"})
+	deps := fake.deps()
+	getCount := 0
+	deps.run = func(ctx context.Context, command browserCommand) ([]byte, error) {
+		if hasArg(command.Args, "get") {
+			getCount++
+			if getCount == 2 {
+				return []byte("pending"), nil
+			}
+		}
+		return fake.run(ctx, command)
+	}
+	if err := smokeLightpanda(context.Background(), deps, "/tmp/smoke", "/tmp/config"); err == nil {
+		t.Fatal("Lightpanda smoke accepted a click that did not produce ready output")
+	}
+}
+
+func TestBrowserProbeTransitionsFromPendingToReadyOnClick(t *testing.T) {
+	if !strings.Contains(browserProbeURL, "forge-probe-status%22%3Epending") || !strings.Contains(browserProbeURL, "textContent%3D%27ready%27") {
+		t.Fatalf("probe must begin pending and set ready on click: %s", browserProbeURL)
+	}
+}
+
+func TestInstallLightpandaPrependsOfficialPathIdempotently(t *testing.T) {
+	fake := newFakeBrowserRuntime(browserPlatform{OS: "darwin", Arch: "arm64"})
+	deps := fake.deps()
+	installDir := filepath.Join(fake.home, ".local", "bin")
+	deps.pathEnv = "/tools"
+	if err := installLightpanda(context.Background(), deps, "/tmp/smoke"); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range fake.commands {
+		if command.Name == "bash" && envValue(command.Env, "PATH") != installDir+string(os.PathListSeparator)+"/tools" {
+			t.Fatalf("installer PATH = %q", envValue(command.Env, "PATH"))
+		}
 	}
 }
 
